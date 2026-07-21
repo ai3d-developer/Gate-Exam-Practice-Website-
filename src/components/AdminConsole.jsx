@@ -802,7 +802,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                             />
                             {uploadForm[`options_${opt}`] && uploadForm[`options_${opt}`].startsWith('data:image') ? (
                               <div>
-                                <img src={uploadForm[`options_${opt}`]} alt={`Opt ${opt}`} style={{ maxHeight: '80px', maxWidth: '100%', borderRadius: '4px' }} />
+                                <img src={uploadForm[`options_${opt}`]} alt={`Opt ${opt}`} style={{ maxHeight: '160px', minHeight: '90px', maxWidth: '100%', borderRadius: '6px' }} />
                                 <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, marginTop: '0.2rem' }}>✓ Image loaded</div>
                               </div>
                             ) : (
@@ -976,7 +976,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                                   <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                     <strong>{lbl}:</strong>
                                     {isImg ? (
-                                      <img src={val} alt={`Opt ${lbl}`} style={{ maxHeight: '45px', maxWidth: '100px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                      <img src={val} alt={`Opt ${lbl}`} style={{ maxHeight: '120px', maxWidth: '220px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #cbd5e1', padding: '0.2rem' }} />
                                     ) : (
                                       <span>{val}</span>
                                     )}

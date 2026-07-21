@@ -629,7 +629,7 @@ export default function CBTConsole({
                             {option}
                           </span>
                           {isOptImg ? (
-                            <img src={optText} alt={`Option ${option}`} style={{ maxHeight: '80px', maxWidth: '100%', objectFit: 'contain', borderRadius: '6px' }} />
+                            <img src={optText} alt={`Option ${option}`} style={{ maxHeight: '180px', minHeight: '100px', maxWidth: '100%', objectFit: 'contain', borderRadius: '8px', padding: '0.25rem' }} />
                           ) : (
                             <span>{optText}</span>
                           )}
@@ -675,7 +675,7 @@ export default function CBTConsole({
                           <span style={{ fontWeight: 600, color: '#334155' }}>({option})</span>
                           {customOptVal && (
                             isCustomOptImg ? (
-                              <img src={customOptVal} alt={`Option ${option}`} style={{ maxHeight: '70px', maxWidth: '100%', objectFit: 'contain', borderRadius: '4px' }} />
+                              <img src={customOptVal} alt={`Option ${option}`} style={{ maxHeight: '160px', minHeight: '90px', maxWidth: '100%', objectFit: 'contain', borderRadius: '6px' }} />
                             ) : (
                               <span style={{ fontSize: '0.9rem', color: '#1e293b' }}>{customOptVal}</span>
                             )
