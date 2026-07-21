@@ -279,12 +279,14 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     const optC = uploadForm.is_opt_image_c ? uploadForm.options_c : (uploadForm.options_c?.trim() || 'C');
     const optD = uploadForm.is_opt_image_d ? uploadForm.options_d : (uploadForm.options_d?.trim() || 'D');
 
+    const targetSection = examConfig.selectedTopic === 'Full Syllabus' ? TOPICS[0] : examConfig.selectedTopic;
+
     const newQ = {
       id: newId,
       year: new Date().getFullYear().toString(),
       original_num: uploadQuestionNumber,
       page_num: 1,
-      section: uploadForm.section, // Use the selected subject/topic from the form
+      section: isEditing ? (uploadForm.section || targetSection) : targetSection, // Automatically use configured exam subject
       level: uploadForm.level || 'L1',
       marks: parseInt(uploadForm.marks),
       type: uploadForm.type,
@@ -643,14 +645,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             )}
 
             <form onSubmit={handleUploadQuestion}>
-              {/* Row 1: Subject/Topic, Bloom's Level, Type, Marks, Negative Marks */}
+              {/* Row 1: Bloom's Level, Type, Marks, Negative Marks */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
-                <div>
-                  <label style={labelStyle}>Subject / Topic</label>
-                  <select value={uploadForm.section} onChange={e => setUploadForm(p => ({ ...p, section: e.target.value }))} style={inputStyle}>
-                    {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
                 <div>
                   <label style={labelStyle}>Bloom's Level</label>
                   <select value={uploadForm.level} onChange={e => setUploadForm(p => ({ ...p, level: e.target.value }))} style={inputStyle}>
