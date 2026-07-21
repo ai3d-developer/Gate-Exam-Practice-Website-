@@ -785,10 +785,11 @@ select option {
 }
 
 .cbt-palette-grid {
-  padding: 1rem;
+  padding: 0.75rem 1rem;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 0.5rem;
+  align-content: start;
   flex: 1;
 }
 
