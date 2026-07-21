@@ -56,6 +56,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Fix dropdown options turning white or unreadable */
+select {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+}
+
+select option {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  padding: 8px 12px;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;

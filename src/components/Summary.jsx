@@ -305,9 +305,16 @@ export default function Summary({ result, onBackToDashboard }) {
                   </span>
                 </div>
 
-                <div style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
-                  {q.question_text.replace(/Session - \d+/gi, '').trim()}
-                </div>
+                {q.question_text && (
+                  <div style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: '0.5rem' }}>
+                    {q.question_text.replace(/Session - \d+/gi, '').trim()}
+                  </div>
+                )}
+                {q.question_image && (
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    <img src={q.question_image} alt={`Q${idx + 1}`} style={{ maxHeight: '180px', maxWidth: '100%', borderRadius: '6px', border: '1px solid #e2e8f0' }} />
+                  </div>
+                )}
 
                 <div className="review-answers-row">
                   <div>

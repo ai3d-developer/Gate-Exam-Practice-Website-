@@ -52,10 +52,16 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     type: 'MCQ',
     marks: 1,
     correct_answer: 'A',
+    question_text: '',
+    show_question_text: false,
     options_a: 'A',
     options_b: 'B',
     options_c: 'C',
     options_d: 'D',
+    is_opt_image_a: false,
+    is_opt_image_b: false,
+    is_opt_image_c: false,
+    is_opt_image_d: false,
     image: null,
     negative_marks: 0.33
   });
@@ -79,16 +85,26 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
   const loadQuestionForPreview = (idx) => {
     if (idx >= 0 && idx < customQuestions.length) {
       const q = customQuestions[idx];
+      const optA = q.custom_options?.[0] || 'A';
+      const optB = q.custom_options?.[1] || 'B';
+      const optC = q.custom_options?.[2] || 'C';
+      const optD = q.custom_options?.[3] || 'D';
       setUploadForm({
         section: q.section,
         level: q.level || 'L1',
         type: q.type,
         marks: q.marks,
         correct_answer: q.correct_answer,
-        options_a: q.custom_options?.[0] || 'A',
-        options_b: q.custom_options?.[1] || 'B',
-        options_c: q.custom_options?.[2] || 'C',
-        options_d: q.custom_options?.[3] || 'D',
+        question_text: q.question_text || '',
+        show_question_text: !!(q.question_text && q.question_text.trim()),
+        options_a: optA,
+        options_b: optB,
+        options_c: optC,
+        options_d: optD,
+        is_opt_image_a: optA.startsWith('data:image') || optA.startsWith('http'),
+        is_opt_image_b: optB.startsWith('data:image') || optB.startsWith('http'),
+        is_opt_image_c: optC.startsWith('data:image') || optC.startsWith('http'),
+        is_opt_image_d: optD.startsWith('data:image') || optD.startsWith('http'),
         image: q.question_image,
         negative_marks: q.negative_marks
       });
@@ -101,10 +117,16 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         type: 'MCQ',
         marks: 1,
         correct_answer: 'A',
+        question_text: '',
+        show_question_text: false,
         options_a: 'A',
         options_b: 'B',
         options_c: 'C',
         options_d: 'D',
+        is_opt_image_a: false,
+        is_opt_image_b: false,
+        is_opt_image_c: false,
+        is_opt_image_d: false,
         image: null,
         negative_marks: 0.33
       });
@@ -209,10 +231,29 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     reader.readAsDataURL(file);
   };
 
+  const handleOptionImageChange = (opt, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError(`Option (${opt.toUpperCase()}) image too large. Max size is 5MB.`);
+      return;
+    }
+    setUploadError('');
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadForm(prev => ({
+        ...prev,
+        [`options_${opt}`]: reader.result,
+        [`is_opt_image_${opt}`]: true
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleUploadQuestion = (e) => {
     e.preventDefault();
-    if (!uploadForm.image) {
-      setUploadError('Please upload a question image.');
+    if (!uploadForm.image && (!uploadForm.question_text || !uploadForm.question_text.trim())) {
+      setUploadError('Please upload a question image OR enter manual question text.');
       return;
     }
 
@@ -235,7 +276,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       marks: parseInt(uploadForm.marks),
       type: uploadForm.type,
       options: uploadForm.type !== 'NAT' ? ['A', 'B', 'C', 'D'] : [],
-      question_text: '',
+      question_text: uploadForm.question_text ? uploadForm.question_text.trim() : '',
       correct_answer: uploadForm.correct_answer,
       question_image: uploadForm.image,
       custom_options: uploadForm.type !== 'NAT'
@@ -273,10 +314,16 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         setUploadForm(prev => ({
           ...prev,
           correct_answer: prev.type === 'NAT' ? '' : 'A',
+          question_text: '',
+          show_question_text: false,
           options_a: 'A',
           options_b: 'B',
           options_c: 'C',
           options_d: 'D',
+          is_opt_image_a: false,
+          is_opt_image_b: false,
+          is_opt_image_c: false,
+          is_opt_image_d: false,
           image: null,
           negative_marks: getDefaultNegativeMarks(prev.type, prev.marks)
         }));
@@ -367,7 +414,9 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     fontSize: '0.9rem',
     outline: 'none',
     boxSizing: 'border-box',
-    transition: 'border-color 0.2s'
+    transition: 'border-color 0.2s',
+    backgroundColor: '#ffffff',
+    color: '#0f172a'
   };
 
   const labelStyle = {
@@ -617,15 +666,60 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                 </div>
               </div>
 
-              {/* Image Upload */}
+              {/* Manual Question Text Toggle & Input */}
+              <div style={{ marginBottom: '1.25rem', background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: uploadForm.show_question_text ? '0.75rem' : 0 }}>
+                  <input
+                    type="checkbox"
+                    id="enable-text-cb"
+                    checked={uploadForm.show_question_text}
+                    onChange={e => setUploadForm(p => ({ ...p, show_question_text: e.target.checked }))}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="enable-text-cb" style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', cursor: 'pointer' }}>
+                    ✍️ Add Manual Question Text (Optional)
+                  </label>
+                </div>
+
+                {uploadForm.show_question_text && (
+                  <div>
+                    <label style={labelStyle}>Question Text</label>
+                    <textarea
+                      rows={3}
+                      value={uploadForm.question_text}
+                      onChange={e => setUploadForm(p => ({ ...p, question_text: e.target.value }))}
+                      placeholder="Type your question statement here..."
+                      style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Question Image Upload */}
               <div style={{ marginBottom: '1.5rem' }}>
-                <label style={labelStyle}>Question Image <span style={{ color: '#ef4444' }}>*</span></label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>
+                    Question Image {!uploadForm.question_text.trim() && <span style={{ color: '#ef4444' }}>*</span>}
+                    <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 400, marginLeft: '0.4rem' }}>
+                      (Optional if question text is provided)
+                    </span>
+                  </label>
+                  {uploadForm.image && (
+                    <button
+                      type="button"
+                      onClick={() => setUploadForm(p => ({ ...p, image: null }))}
+                      style={{ background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '6px', padding: '0.2rem 0.6rem', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      ✕ Remove Image
+                    </button>
+                  )}
+                </div>
                 <div style={{
                   border: `2px dashed ${uploadForm.image ? '#10b981' : '#cbd5e1'}`,
                   borderRadius: '12px',
-                  padding: '2rem',
+                  padding: '1.5rem',
                   textAlign: 'center',
-                  background: uploadForm.image ? '#f0fdf4' : '#f8fafc',
+                  background: uploadForm.image ? '#f0fdf4' : '#ffffff',
                   cursor: 'pointer',
                   position: 'relative',
                   transition: 'all 0.2s'
@@ -635,7 +729,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     type="file"
                     accept="image/*"
                     onChange={handleImageChange}
-                    required={!previewIndex !== -1}
+                    required={!previewIndex !== -1 && !uploadForm.question_text.trim()}
                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
                   />
                   {uploadForm.image ? (
@@ -645,8 +739,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     </div>
                   ) : (
                     <div>
-                      <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🖼️</div>
-                      <div style={{ fontWeight: 600, color: '#334155', marginBottom: '0.25rem' }}>Click to upload question image</div>
+                      <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🖼️</div>
+                      <div style={{ fontWeight: 600, color: '#334155', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Click to upload question image</div>
                       <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>PNG, JPG, WEBP — max 5MB</div>
                     </div>
                   )}
@@ -657,20 +751,61 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
               {uploadForm.type !== 'NAT' ? (
                 <>
                   <div style={{ marginBottom: '1rem' }}>
-                    <label style={labelStyle}>Answer Options (shown below image)</label>
+                    <label style={labelStyle}>Answer Options (Text or Image)</label>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
                     {['a', 'b', 'c', 'd'].map(opt => (
-                      <div key={opt}>
-                        <label style={{ ...labelStyle, fontWeight: 500 }}>Option ({opt.toUpperCase()})</label>
-                        <input
-                          type="text"
-                          value={uploadForm[`options_${opt}`]}
-                          onChange={e => setUploadForm(p => ({ ...p, [`options_${opt}`]: e.target.value }))}
-                          placeholder={`Enter option ${opt.toUpperCase()}`}
-                          required
-                          style={inputStyle}
-                        />
+                      <div key={opt} style={{ background: '#f8fafc', padding: '0.85rem', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                          <label style={{ ...labelStyle, marginBottom: 0, fontWeight: 700 }}>Option ({opt.toUpperCase()})</label>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={uploadForm[`is_opt_image_${opt}`]}
+                              onChange={e => {
+                                const isChecked = e.target.checked;
+                                setUploadForm(p => ({
+                                  ...p,
+                                  [`is_opt_image_${opt}`]: isChecked,
+                                  [`options_${opt}`]: isChecked
+                                    ? (p[`options_${opt}`]?.startsWith('data:image') ? p[`options_${opt}`] : '')
+                                    : (p[`options_${opt}`]?.startsWith('data:image') ? opt.toUpperCase() : p[`options_${opt}`])
+                                }));
+                              }}
+                            />
+                            📷 Image Option
+                          </label>
+                        </div>
+
+                        {uploadForm[`is_opt_image_${opt}`] ? (
+                          <div style={{ border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '0.6rem', textAlign: 'center', background: 'white', position: 'relative' }}>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={e => handleOptionImageChange(opt, e)}
+                              style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
+                            />
+                            {uploadForm[`options_${opt}`] && uploadForm[`options_${opt}`].startsWith('data:image') ? (
+                              <div>
+                                <img src={uploadForm[`options_${opt}`]} alt={`Opt ${opt}`} style={{ maxHeight: '80px', maxWidth: '100%', borderRadius: '4px' }} />
+                                <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600, marginTop: '0.2rem' }}>✓ Image loaded</div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.8rem', color: '#64748b', padding: '0.5rem' }}>
+                                📂 Click to upload image for Option ({opt.toUpperCase()})
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={uploadForm[`options_${opt}`]}
+                            onChange={e => setUploadForm(p => ({ ...p, [`options_${opt}`]: e.target.value }))}
+                            placeholder={`Enter option ${opt.toUpperCase()}`}
+                            required={uploadForm.type !== 'NAT'}
+                            style={inputStyle}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -811,12 +946,28 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                             <strong>Subject/Topic:</strong> {q.section}
                           </div>
 
+                          {q.question_text && (
+                            <div style={{ fontSize: '0.9rem', color: '#1e293b', fontWeight: 500, marginBottom: '0.5rem', whiteSpace: 'pre-wrap' }}>
+                              {q.question_text}
+                            </div>
+                          )}
+
                           {q.type !== 'NAT' && q.custom_options && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.35rem 1rem', fontSize: '0.8rem', color: '#475569' }}>
-                              <div><strong>A:</strong> {q.custom_options[0]}</div>
-                              <div><strong>B:</strong> {q.custom_options[1]}</div>
-                              <div><strong>C:</strong> {q.custom_options[2]}</div>
-                              <div><strong>D:</strong> {q.custom_options[3]}</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 1rem', fontSize: '0.8rem', color: '#475569' }}>
+                              {['A', 'B', 'C', 'D'].map((lbl, i) => {
+                                const val = q.custom_options[i] || '';
+                                const isImg = val.startsWith('data:image') || val.startsWith('http') || val.startsWith('blob:');
+                                return (
+                                  <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                    <strong>{lbl}:</strong>
+                                    {isImg ? (
+                                      <img src={val} alt={`Opt ${lbl}`} style={{ maxHeight: '45px', maxWidth: '100px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                                    ) : (
+                                      <span>{val}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
 

@@ -549,32 +549,27 @@ export default function CBTConsole({
           <div style={{ padding: '0.5rem 1rem', background: '#fafafa', borderBottom: '1px solid #e2e8f0', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
             Type: {activeQuestion?.type} | Marks: {activeQuestion?.marks} (+{activeQuestion?.marks}, -{activeQuestion?.negative_marks !== undefined ? activeQuestion.negative_marks : (activeQuestion?.type === 'MCQ' ? (activeQuestion.marks / 3).toFixed(2) : '0')})
           </div>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px', border: '1px solid #e2e8f0', borderTop: 'none', padding: '1rem', overflow: 'hidden', minHeight: 0 }}>
-            {activeQuestion && activeQuestion.question_image ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px', border: '1px solid #e2e8f0', borderTop: 'none', padding: '1.25rem', overflow: 'auto', minHeight: 0 }}>
+            {activeQuestion && activeQuestion.question_text && (
+              <div style={{ fontSize: '1.05rem', lineHeight: '1.6', color: '#1e293b', fontWeight: 500, marginBottom: activeQuestion.question_image ? '1rem' : 0, width: '100%', whiteSpace: 'pre-wrap' }}>
+                {activeQuestion.question_text.replace(/Session - \d+/gi, '').replace(/^Q\.\s*\d+\s*/i, '').trim()}
+              </div>
+            )}
+            {activeQuestion && activeQuestion.question_image && (
               <img
                 src={activeQuestion.question_image}
                 alt="Question Diagram"
                 style={{
                   maxWidth: '100%',
-                  maxHeight: '100%',
+                  maxHeight: activeQuestion.question_text ? '280px' : '100%',
                   objectFit: 'contain',
                   borderRadius: '8px'
                 }}
               />
-            ) : (
-              // Fallback canvas / text if no custom question image
-              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'auto', padding: '0.5rem' }}>
-                {!activeQuestion?.question_image && activeQuestion?.question_text && (
-                  <div style={{ fontSize: '1rem', lineHeight: '1.6', color: '#1e293b', whiteSpace: 'pre-wrap' }}>
-                    {activeQuestion.question_text.replace(/Session - \d+/gi, '').replace(/^Q\.\s*\d+\s*/i, '').trim()}
-                  </div>
-                )}
-                {/* PDF canvas fallback */}
-                {!activeQuestion?.question_image && !activeQuestion?.question_text && (
-                  <div className="pdf-canvas-clipper" style={{ position: 'relative', overflow: 'hidden', width: '100%' }}>
-                    <canvas ref={canvasRef} style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }} />
-                  </div>
-                )}
+            )}
+            {!activeQuestion?.question_image && !activeQuestion?.question_text && (
+              <div className="pdf-canvas-clipper" style={{ position: 'relative', overflow: 'hidden', width: '100%' }}>
+                <canvas ref={canvasRef} style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }} />
               </div>
             )}
           </div>
@@ -591,8 +586,8 @@ export default function CBTConsole({
             {/* Options Selection */}
             {activeQuestion && (
               activeQuestion.type !== 'NAT' ? (
-                activeQuestion.question_image && activeQuestion.custom_options?.length > 0 ? (
-                  // Custom image question - Option buttons with labels
+                (activeQuestion.question_image || activeQuestion.question_text) && activeQuestion.custom_options?.length > 0 ? (
+                  // Custom image/text question - Option buttons with labels/images
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     {activeQuestion.options.map(option => {
                       const q_id = activeQuestion.id;
@@ -601,6 +596,7 @@ export default function CBTConsole({
                         ? currentAns === option
                         : currentAns.split(';').includes(option);
                       const optText = activeQuestion.custom_options[option.charCodeAt(0) - 65] || '';
+                      const isOptImg = optText.startsWith('data:image') || optText.startsWith('http') || optText.startsWith('blob:');
                       return (
                         <button
                           key={option}
@@ -632,7 +628,11 @@ export default function CBTConsole({
                           }}>
                             {option}
                           </span>
-                          <span>{optText}</span>
+                          {isOptImg ? (
+                            <img src={optText} alt={`Option ${option}`} style={{ maxHeight: '80px', maxWidth: '100%', objectFit: 'contain', borderRadius: '6px' }} />
+                          ) : (
+                            <span>{optText}</span>
+                          )}
                         </button>
                       );
                     })}
@@ -646,6 +646,8 @@ export default function CBTConsole({
                       const isSelected = activeQuestion.type === 'MCQ'
                         ? currentAns === option
                         : currentAns.split(';').includes(option);
+                      const customOptVal = activeQuestion.custom_options?.[option.charCodeAt(0) - 65] || '';
+                      const isCustomOptImg = customOptVal.startsWith('data:image') || customOptVal.startsWith('http') || customOptVal.startsWith('blob:');
 
                       return (
                         <div
@@ -671,6 +673,13 @@ export default function CBTConsole({
                             style={{ cursor: 'pointer' }}
                           />
                           <span style={{ fontWeight: 600, color: '#334155' }}>({option})</span>
+                          {customOptVal && (
+                            isCustomOptImg ? (
+                              <img src={customOptVal} alt={`Option ${option}`} style={{ maxHeight: '70px', maxWidth: '100%', objectFit: 'contain', borderRadius: '4px' }} />
+                            ) : (
+                              <span style={{ fontSize: '0.9rem', color: '#1e293b' }}>{customOptVal}</span>
+                            )
+                          )}
                         </div>
                       );
                     })}
