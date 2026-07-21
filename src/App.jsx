@@ -16,12 +16,12 @@ const isQuestionExpired = (id) => {
 
   const uploadDate = new Date(ts);
   
-  // Calculate the expiration date/time for this upload (7:00 PM of upload day)
+  // Calculate the expiration date/time for this upload (8:00 PM of upload day)
   const expiryDate = new Date(uploadDate);
-  expiryDate.setHours(19, 0, 0, 0);
+  expiryDate.setHours(20, 0, 0, 0);
   
   if (uploadDate >= expiryDate) {
-    // If uploaded after 7:00 PM, it expires at 7:00 PM the next day
+    // If uploaded after 8:00 PM, it expires at 8:00 PM the next day
     expiryDate.setDate(expiryDate.getDate() + 1);
   }
   
@@ -250,6 +250,8 @@ export default function App() {
       return acc;
     }, {}) : {};
 
+    const calcTotalMarks = results.totalMarks || (results.reviewDetails ? results.reviewDetails.reduce((sum, q) => sum + (parseInt(q.marks) || 1), 0) : results.totalQuestions);
+
     const newLog = {
       id: `log_${Date.now()}`,
       studentName: displayName,
@@ -261,6 +263,7 @@ export default function App() {
       date: new Date().toISOString(),
       topic: testConfig.selectedTopic,
       score: results.score,
+      totalMarks: calcTotalMarks,
       totalQuestions: results.totalQuestions,
       correctCount: results.correctCount,
       incorrectCount: results.incorrectCount,

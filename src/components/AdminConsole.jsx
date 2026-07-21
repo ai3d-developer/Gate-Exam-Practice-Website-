@@ -71,20 +71,116 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
   // Tab 3: Student Logs
   const [studentLogs, setStudentLogs] = useState([]);
   const [logsFilter, setLogsFilter] = useState('all');
+  const [logsSearchQuery, setLogsSearchQuery] = useState('');
+  const [logsSortBy, setLogsSortBy] = useState('reg_asc');
   const [selectedLogDate, setSelectedLogDate] = useState(() => {
     const local = new Date();
     const offset = local.getTimezoneOffset();
     const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
     return adjusted.toISOString().split('T')[0];
   });
+  // Target Date Scheduling & Question Bank States
+  const [targetDate, setTargetDate] = useState(() => {
+    const local = new Date();
+    const offset = local.getTimezoneOffset();
+    const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+    return adjusted.toISOString().split('T')[0];
+  });
+  const [bankSubjectFilter, setBankSubjectFilter] = useState('All');
+  const [bankSearchQuery, setBankSearchQuery] = useState('');
   const [uploadQuestionNumber, setUploadQuestionNumber] = useState(1);
   const [previewIndex, setPreviewIndex] = useState(-1);
 
-  const customQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_'));
+  const todayDateStr = (() => {
+    const local = new Date();
+    const offset = local.getTimezoneOffset();
+    const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+    return adjusted.toISOString().split('T')[0];
+  })();
 
-  const loadQuestionForPreview = (idx) => {
-    if (idx >= 0 && idx < customQuestions.length) {
-      const q = customQuestions[idx];
+  const customQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_'));
+  const rawAllotted = customQuestions.filter(q => {
+    if (q.target_date) return q.target_date === targetDate;
+    return targetDate === todayDateStr;
+  });
+
+  // Separate Image Questions (1..10) vs Manual Text Questions (11..20)
+  const imageQuestions = rawAllotted.filter(q => q.question_image && (!q.question_text || !q.question_text.trim()));
+  const textQuestions = rawAllotted.filter(q => !q.question_image || (q.question_text && q.question_text.trim()));
+
+  const allottedQuestionsForDate = [
+    ...imageQuestions.map((q, idx) => ({ ...q, original_num: (q.original_num && q.original_num <= 10) ? q.original_num : (idx + 1) })),
+    ...textQuestions.map((q, idx) => ({ ...q, original_num: (q.original_num && q.original_num >= 11) ? q.original_num : (idx + 11) }))
+  ].sort((a, b) => (a.original_num || 0) - (b.original_num || 0));
+
+  useEffect(() => {
+    if (rawAllotted.length === 0) {
+      setPreviewIndex(-1);
+      setUploadQuestionNumber(1);
+      setUploadForm({
+        section: examConfig.selectedTopic === 'Full Syllabus' ? TOPICS[0] : examConfig.selectedTopic,
+        level: 'L1',
+        type: 'MCQ',
+        marks: 1,
+        correct_answer: 'A',
+        question_text: '',
+        show_question_text: false,
+        options_a: 'A',
+        options_b: 'B',
+        options_c: 'C',
+        options_d: 'D',
+        is_opt_image_a: false,
+        is_opt_image_b: false,
+        is_opt_image_c: false,
+        is_opt_image_d: false,
+        image: null,
+        negative_marks: 0.33
+      });
+    } else {
+      setPreviewIndex(-1);
+      setUploadQuestionNumber(rawAllotted.length + 1);
+    }
+  }, [targetDate, questionsList]);
+
+  const loadQuestionForPreview = (target) => {
+    if (target === -1) {
+      setPreviewIndex(-1);
+      setUploadForm({
+        section: examConfig.selectedTopic === 'Full Syllabus' ? TOPICS[0] : examConfig.selectedTopic,
+        level: 'L1',
+        type: 'MCQ',
+        marks: 1,
+        correct_answer: 'A',
+        question_text: '',
+        show_question_text: false,
+        options_a: 'A',
+        options_b: 'B',
+        options_c: 'C',
+        options_d: 'D',
+        is_opt_image_a: false,
+        is_opt_image_b: false,
+        is_opt_image_c: false,
+        is_opt_image_d: false,
+        image: null,
+        negative_marks: 0.33
+      });
+      return;
+    }
+
+    let q = null;
+    let idx = -1;
+
+    if (typeof target === 'object' && target !== null) {
+      q = target;
+      idx = allottedQuestionsForDate.findIndex(item => item.id === q.id);
+    } else if (typeof target === 'number') {
+      if (target >= 0 && target < allottedQuestionsForDate.length) {
+        idx = target;
+        q = allottedQuestionsForDate[idx];
+      }
+    }
+
+    if (q) {
       const optA = q.custom_options?.[0] || 'A';
       const optB = q.custom_options?.[1] || 'B';
       const optC = q.custom_options?.[2] || 'C';
@@ -106,32 +202,10 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         is_opt_image_c: optC.startsWith('data:image') || optC.startsWith('http'),
         is_opt_image_d: optD.startsWith('data:image') || optD.startsWith('http'),
         image: q.question_image,
-        negative_marks: q.negative_marks
+        negative_marks: q.negative_marks || (q.marks === 1 ? 0.33 : 0.66)
       });
-      setUploadQuestionNumber(q.original_num);
-      setPreviewIndex(idx);
-    } else {
-      setUploadForm({
-        section: examConfig.selectedTopic === 'Full Syllabus' ? TOPICS[0] : examConfig.selectedTopic,
-        level: 'L1',
-        type: 'MCQ',
-        marks: 1,
-        correct_answer: 'A',
-        question_text: '',
-        show_question_text: false,
-        options_a: 'A',
-        options_b: 'B',
-        options_c: 'C',
-        options_d: 'D',
-        is_opt_image_a: false,
-        is_opt_image_b: false,
-        is_opt_image_c: false,
-        is_opt_image_d: false,
-        image: null,
-        negative_marks: 0.33
-      });
-      setUploadQuestionNumber(customQuestions.length + 1);
-      setPreviewIndex(-1);
+      setPreviewIndex(idx !== -1 ? idx : 0);
+      setUploadQuestionNumber(q.original_num || (idx + 1));
     }
   };
 
@@ -192,16 +266,23 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
   const handleSaveConfig = (e) => {
     e.preventDefault();
-    const updatedConfig = { ...examConfig };
+    const updatedConfig = { ...examConfig, targetDate };
     // 1. Save locally first (fallback)
     localStorage.setItem('gate_cbt_admin_exam_config', JSON.stringify(updatedConfig));
     setConfigSaved(true);
     setTimeout(() => setConfigSaved(false), 3000);
 
-    // 2. Sync to Firebase
-    set(ref(db, 'exam_config'), updatedConfig)
+    // 2. Sync to Firebase & navigate to Upload Question tab
+    Promise.all([
+      set(ref(db, 'exam_config'), updatedConfig),
+      set(ref(db, `daily_exam_config/${targetDate}`), updatedConfig)
+    ])
+      .then(() => {
+        setActiveTab('upload');
+      })
       .catch(err => {
         console.warn('Firebase config sync failed, saved locally instead:', err);
+        setActiveTab('upload');
       });
   };
 
@@ -260,6 +341,19 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
   const handleUploadQuestion = (e) => {
     e.preventDefault();
+
+    const todayDateStr = (() => {
+      const local = new Date();
+      const offset = local.getTimezoneOffset();
+      const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+      return adjusted.toISOString().split('T')[0];
+    })();
+
+    if (targetDate < todayDateStr) {
+      setUploadError(`Editing or saving questions for past exam dates (${targetDate}) is locked and not allowed.`);
+      return;
+    }
+
     if (!uploadForm.image && (!uploadForm.question_text || !uploadForm.question_text.trim())) {
       setUploadError('Please upload a question image OR enter manual question text.');
       return;
@@ -297,7 +391,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       custom_options: uploadForm.type !== 'NAT'
         ? [optA, optB, optC, optD]
         : [],
-      negative_marks: parseFloat(uploadForm.negative_marks) || 0
+      negative_marks: parseFloat(uploadForm.negative_marks) || 0,
+      target_date: targetDate
     };
 
     // 1. Save locally first (fallback storage)
@@ -347,10 +442,13 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       }
     };
 
-    // 2. Try to sync with Firebase Realtime DB
+    // 2. Sync with Firebase Realtime DB (including daily_questions and question_bank)
+    const sanitizedSection = (newQ.section || 'General').replace(/[\.#\$\[\]]/g, '_');
     Promise.all([
       set(ref(db, `custom_questions/${newId}`), newQ),
-      set(ref(db, `custom_answers/${newId}`), uploadForm.correct_answer)
+      set(ref(db, `custom_answers/${newId}`), uploadForm.correct_answer),
+      set(ref(db, `daily_questions/${targetDate}/${newId}`), newQ),
+      set(ref(db, `question_bank/${sanitizedSection}/${newId}`), newQ)
     ])
       .then(() => {
         setUploadSuccess(true);
@@ -368,6 +466,18 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
   };
 
   const handleDeleteQuestion = async (id) => {
+    const todayDateStr = (() => {
+      const local = new Date();
+      const offset = local.getTimezoneOffset();
+      const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+      return adjusted.toISOString().split('T')[0];
+    })();
+
+    if (targetDate < todayDateStr) {
+      alert(`Deleting questions for past exam dates (${targetDate}) is locked and not allowed.`);
+      return;
+    }
+
     const confirmDelete = window.confirm("Are you sure you want to delete this custom question?");
     if (!confirmDelete) return;
 
@@ -401,8 +511,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     <button
       onClick={() => setActiveTab(key)}
       style={{
-        flex: 1,
-        padding: '0.9rem 1rem',
+        whiteSpace: 'nowrap',
+        padding: '0.85rem 1.15rem',
         borderRadius: '12px',
         border: '1px solid',
         borderColor: activeTab === key ? '#3b82f6' : '#e2e8f0',
@@ -412,9 +522,10 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         color: activeTab === key ? '#2563eb' : '#475569',
         fontWeight: 700,
         cursor: 'pointer',
-        fontSize: '0.95rem',
+        fontSize: '0.875rem',
         boxShadow: activeTab === key ? '0 4px 12px rgba(59,130,246,0.1)' : 'none',
-        transition: 'all 0.2s'
+        transition: 'all 0.2s',
+        flexShrink: 0
       }}
     >
       {label}
@@ -509,10 +620,11 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
       <div style={{ maxWidth: '1280px', margin: '2rem auto', padding: '0 1.5rem' }}>
         {/* Tab Buttons */}
-        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
           {TAB_BTN('config', '⚙️ Configure Exam')}
-          {TAB_BTN('upload', '📤 Upload Question')}
-          {TAB_BTN('questions', '📁 View Uploaded Qns')}
+          {TAB_BTN('upload', `📤 Upload Question (${targetDate})`)}
+          {TAB_BTN('edit_current', `✏️ Edit Current Qns (${allottedQuestionsForDate.length})`)}
+          {TAB_BTN('questions', '📚 Question Bank')}
           {TAB_BTN('logs', '📊 Student Logs')}
         </div>
 
@@ -520,9 +632,22 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         {activeTab === 'config' && (
           <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '2rem', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
             <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.4rem', fontWeight: 800, marginBottom: '0.5rem' }}>Set Student Exam Template</h2>
-            <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '2rem' }}>
-              Configure the question count and time limit. Students will see this as their assigned daily practice exam.
+            <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+              Configure the exam date, question count, and time limit. Students will see this as their assigned daily practice exam.
             </p>
+
+            {/* Warning if questions already allotted for selected target date */}
+            {allottedQuestionsForDate.length > 0 && (
+              <div style={{ padding: '1rem 1.25rem', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '12px', color: '#d48806', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize: '0.95rem', color: '#b7eb8f' ? '#873800' : '#d48806' }}>Already Questions Allotted for this Date ({targetDate})</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 500, color: '#ad4e00', marginTop: '0.2rem' }}>
+                    {allottedQuestionsForDate.length} question(s) are currently configured for {targetDate}.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {configSaved && (
               <div style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.875rem', marginBottom: '1.5rem', fontWeight: 600, fontSize: '0.875rem' }}>
@@ -533,15 +658,24 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
              <form onSubmit={handleSaveConfig}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
                 <div>
+                  <label style={labelStyle}>📅 Target Exam Date</label>
+                  <input
+                    type="date"
+                    value={targetDate}
+                    onChange={e => setTargetDate(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
                   <label style={labelStyle}>Selected Subject / Topic</label>
                   <select value={examConfig.selectedTopic} onChange={e => setExamConfig(p => ({ ...p, selectedTopic: e.target.value }))} style={inputStyle}>
                     {allTopics.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Question Count</label>
+                  <label style={labelStyle}>Question Count Limit</label>
                   <select value={examConfig.numQuestions} onChange={e => setExamConfig(p => ({ ...p, numQuestions: parseInt(e.target.value) }))} style={inputStyle}>
-                    {[5, 10, 15, 20, 30, 40, 65].map(n => <option key={n} value={n}>{n} Questions</option>)}
+                    {[5, 10, 15, 20, 30, 40, 65].map(n => <option key={n} value={n}>{n} Questions Max</option>)}
                   </select>
                 </div>
                 <div>
@@ -564,10 +698,10 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1.25rem' }}>
               <div>
                 <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.4rem', fontWeight: 800, marginBottom: '0.25rem' }}>
-                  {previewIndex === -1 ? `Post Custom Question (Question #${uploadQuestionNumber})` : `Review Custom Question (Question #${uploadQuestionNumber})`}
+                  Gate Questions and Technical Questions (Question #{uploadQuestionNumber})
                 </h2>
                 <p style={{ color: '#64748b', fontSize: '0.875rem', margin: 0 }}>
-                  Active Config Subject: <strong style={{ color: '#3b82f6' }}>{examConfig.selectedTopic}</strong>
+                  Target Exam Date: <strong style={{ color: '#2563eb' }}>{targetDate}</strong> &nbsp;|&nbsp; Active Subject: <strong style={{ color: '#3b82f6' }}>{examConfig.selectedTopic}</strong>
                 </p>
               </div>
 
@@ -575,8 +709,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <button
                   type="button"
-                  disabled={customQuestions.length === 0 || previewIndex === 0}
-                  onClick={() => loadQuestionForPreview(previewIndex === -1 ? customQuestions.length - 1 : previewIndex - 1)}
+                  disabled={allottedQuestionsForDate.length === 0 || previewIndex === 0}
+                  onClick={() => loadQuestionForPreview(previewIndex === -1 ? allottedQuestionsForDate.length - 1 : previewIndex - 1)}
                   style={{
                     padding: '0.5rem 0.75rem',
                     background: '#e2e8f0',
@@ -585,19 +719,19 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     color: '#334155',
                     fontWeight: '600',
                     fontSize: '0.8rem',
-                    cursor: (customQuestions.length === 0 || previewIndex === 0) ? 'not-allowed' : 'pointer',
-                    opacity: (customQuestions.length === 0 || previewIndex === 0) ? 0.5 : 1
+                    cursor: (allottedQuestionsForDate.length === 0 || previewIndex === 0) ? 'not-allowed' : 'pointer',
+                    opacity: (allottedQuestionsForDate.length === 0 || previewIndex === 0) ? 0.5 : 1
                   }}
                 >
                   ⬅ Previous
                 </button>
                 <span style={{ fontSize: '0.85rem', fontWeight: '600', color: '#475569', padding: '0 0.25rem' }}>
-                  {previewIndex === -1 ? 'New Question' : `${previewIndex + 1} / ${customQuestions.length}`}
+                  {previewIndex === -1 ? 'New Question' : `${previewIndex + 1} / ${allottedQuestionsForDate.length}`}
                 </span>
                 <button
                   type="button"
-                  disabled={previewIndex === -1}
-                  onClick={() => loadQuestionForPreview(previewIndex === customQuestions.length - 1 ? -1 : previewIndex + 1)}
+                  disabled={previewIndex === -1 || previewIndex === allottedQuestionsForDate.length - 1}
+                  onClick={() => loadQuestionForPreview(previewIndex === allottedQuestionsForDate.length - 1 ? -1 : previewIndex + 1)}
                   style={{
                     padding: '0.5rem 0.75rem',
                     background: '#e2e8f0',
@@ -606,8 +740,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     color: '#334155',
                     fontWeight: '600',
                     fontSize: '0.8rem',
-                    cursor: previewIndex === -1 ? 'not-allowed' : 'pointer',
-                    opacity: previewIndex === -1 ? 0.5 : 1
+                    cursor: (previewIndex === -1 || previewIndex === allottedQuestionsForDate.length - 1) ? 'not-allowed' : 'pointer',
+                    opacity: (previewIndex === -1 || previewIndex === allottedQuestionsForDate.length - 1) ? 0.5 : 1
                   }}
                 >
                   Next ➡
@@ -632,6 +766,78 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                 )}
               </div>
             </div>
+
+            {/* Question Quick Navigator Grid (1 to N) */}
+            <div style={{ marginBottom: '1.5rem', background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Select Question Number to Edit or Upload for {targetDate} (Limit: {examConfig.numQuestions || 20} Max)
+                </span>
+                <span style={{ fontSize: '0.8rem', fontWeight: 600, color: allottedQuestionsForDate.length >= (examConfig.numQuestions || 20) ? '#dc2626' : '#059669' }}>
+                  {allottedQuestionsForDate.length} / {examConfig.numQuestions || 20} Uploaded
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {Array.from({ length: examConfig.numQuestions || 20 }).map((_, idx) => {
+                  const qNum = idx + 1;
+                  const existingIdx = allottedQuestionsForDate.findIndex(q => q.original_num === qNum);
+                  const isCurrent = (previewIndex !== -1 && allottedQuestionsForDate[previewIndex]?.original_num === qNum) || (previewIndex === -1 && uploadQuestionNumber === qNum);
+                  const hasQ = existingIdx !== -1;
+
+                  return (
+                    <button
+                      key={qNum}
+                      type="button"
+                      onClick={() => {
+                        if (hasQ) {
+                          loadQuestionForPreview(allottedQuestionsForDate[existingIdx]);
+                        } else {
+                          setUploadQuestionNumber(qNum);
+                          loadQuestionForPreview(-1);
+                        }
+                      }}
+                      style={{
+                        width: '38px',
+                        height: '38px',
+                        borderRadius: '8px',
+                        border: isCurrent ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: isCurrent ? '#2563eb' : hasQ ? '#d1fae5' : '#ffffff',
+                        color: isCurrent ? '#ffffff' : hasQ ? '#065f46' : '#64748b',
+                        fontWeight: 700,
+                        fontSize: '0.875rem',
+                        cursor: 'pointer',
+                        boxShadow: isCurrent ? '0 2px 6px rgba(37,99,235,0.3)' : 'none'
+                      }}
+                      title={hasQ ? `Question #${qNum} (Uploaded for ${targetDate} - Click to Edit)` : `Question #${qNum} (Empty - Click to Add)`}
+                    >
+                      {qNum}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Already Allotted Date Notice (View Only Mode) */}
+            {allottedQuestionsForDate.length > 0 && previewIndex === -1 && (
+              <div style={{ padding: '1rem 1.25rem', background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '12px', color: '#1e40af', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>🔒</span>
+                <div>
+                  <div style={{ fontSize: '0.95rem', color: '#1e3a8a' }}>Questions Already Allotted for {targetDate} ({allottedQuestionsForDate.length} Questions)</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 500, color: '#1d4ed8', marginTop: '0.2rem' }}>
+                    Questions have already been posted for this date. The upload form below is in <strong>View Only</strong> mode.
+                    To edit any question, click <strong>"✏️ Edit Current Qns"</strong> tab or select a question number above to modify it.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Question Limit Reached Notice */}
+            {previewIndex === -1 && uploadQuestionNumber > (examConfig.numQuestions || 20) && (
+              <div style={{ padding: '1rem', background: '#fee2e2', border: '1px solid #ef4444', borderRadius: '10px', color: '#991b1b', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                ⛔ Maximum question limit reached ({examConfig.numQuestions || 20} Questions limit for {targetDate}). You cannot add Question #{uploadQuestionNumber}. Click an existing question number above (1 to {examConfig.numQuestions || 20}) to edit.
+              </div>
+            )}
 
             {uploadSuccess && (
               <div style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.875rem', marginBottom: '1.5rem', fontWeight: 600, fontSize: '0.875rem' }}>
@@ -877,7 +1083,20 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
               <button
                 type="submit"
-                style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.875rem 2rem', fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}
+                disabled={previewIndex === -1 && uploadQuestionNumber > (examConfig.numQuestions || 20)}
+                style={{
+                  background: (previewIndex === -1 && uploadQuestionNumber > (examConfig.numQuestions || 20))
+                    ? '#cbd5e1'
+                    : 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.875rem 2rem',
+                  fontWeight: 700,
+                  cursor: (previewIndex === -1 && uploadQuestionNumber > (examConfig.numQuestions || 20)) ? 'not-allowed' : 'pointer',
+                  fontSize: '0.95rem',
+                  boxShadow: '0 4px 12px rgba(99,102,241,0.25)'
+                }}
               >
                 {previewIndex === -1 ? `Save & Next (Upload Question #${uploadQuestionNumber})` : `Update Question #${uploadQuestionNumber}`}
               </button>
@@ -885,27 +1104,48 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
           </div>
         )}
 
-        {/* ===== TAB 2.5: View Uploaded Questions ===== */}
-        {activeTab === 'questions' && (
-          <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '2rem', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-              <div>
-                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>Uploaded Custom Questions</h2>
-                <p style={{ color: '#64748b', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                  Manage the custom questions you've added to the test pool.
-                </p>
-              </div>
-              <span style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '0.8rem', fontWeight: 700, padding: '0.35rem 0.75rem', borderRadius: '20px' }}>
-                Total: {customQuestions.length} Questions
-              </span>
-            </div>
+        {/* ===== TAB 2.3: Edit Current Questions for Target Date ===== */}
+        {activeTab === 'edit_current' && (() => {
+          const todayDateStr = (() => {
+            const local = new Date();
+            const offset = local.getTimezoneOffset();
+            const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+            return adjusted.toISOString().split('T')[0];
+          })();
+          const isPastDate = targetDate < todayDateStr;
 
-            {customQuestions.length === 0 ? (
+          return (
+            <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '2rem', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>✏️ Edit Questions for {targetDate}</h2>
+                  <p style={{ color: '#64748b', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                    Questions currently allotted for <strong>{targetDate}</strong> ({examConfig.selectedTopic}).
+                  </p>
+                </div>
+                <span style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '0.85rem', fontWeight: 700, padding: '0.4rem 0.85rem', borderRadius: '20px' }}>
+                  {allottedQuestionsForDate.length} / {examConfig.numQuestions || 20} Questions Allotted
+                </span>
+              </div>
+
+              {isPastDate && (
+                <div style={{ padding: '1rem 1.25rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', color: '#991b1b', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.4rem' }}>🔒</span>
+                  <div>
+                    <div>Past Exam Date ({targetDate}) — Editing Locked</div>
+                    <div style={{ fontSize: '0.825rem', fontWeight: 500, color: '#b91c1c', marginTop: '0.2rem' }}>
+                      This exam date has already passed. Questions for completed exam dates are locked and cannot be edited or modified.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            {allottedQuestionsForDate.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem 1.5rem', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
-                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '1rem' }}>📭</span>
-                <h3 style={{ fontSize: '1.1rem', color: '#0f172a', fontWeight: 700, marginBottom: '0.25rem' }}>No custom questions uploaded yet</h3>
+                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '1rem' }}>📝</span>
+                <h3 style={{ fontSize: '1.1rem', color: '#0f172a', fontWeight: 700, marginBottom: '0.25rem' }}>No questions allotted yet for {targetDate}</h3>
                 <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '0 0 1.5rem 0' }}>
-                  Click the Upload Question tab to start adding custom questions to the exam.
+                  Go to "Upload Question" tab to post questions for this target date.
                 </p>
                 <button
                   onClick={() => setActiveTab('upload')}
@@ -919,22 +1159,20 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     cursor: 'pointer'
                   }}
                 >
-                  ➕ Upload First Question
+                  ➕ Upload Questions for {targetDate}
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {customQuestions.map((q, idx) => {
+                {allottedQuestionsForDate.map((q) => {
+                  const originalIdx = customQuestions.findIndex(item => item.id === q.id);
                   return (
                     <div key={q.id} style={{ display: 'flex', gap: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem' }}>
-                      {/* Image Thumbnail */}
                       {q.question_image && (
                         <div style={{ width: '150px', minWidth: '150px', height: '110px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <img src={q.question_image} alt={`Q${q.original_num}`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
                         </div>
                       )}
-
-                      {/* Question Details */}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
@@ -950,15 +1188,10 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                             <span style={{ background: '#fef3c7', color: '#d97706', fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
                               Level: {q.level || 'L1'}
                             </span>
-                            {q.negative_marks > 0 && (
-                              <span style={{ background: '#fee2e2', color: '#b91c1c', fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
-                                -{q.negative_marks} Neg Marks
-                              </span>
-                            )}
                           </div>
 
                           <div style={{ fontSize: '0.85rem', color: '#475569', marginBottom: '0.5rem' }}>
-                            <strong>Subject/Topic:</strong> {q.section}
+                            <strong>Subject:</strong> {q.section} &nbsp;|&nbsp; <strong>Target Date:</strong> {targetDate}
                           </div>
 
                           {q.question_text && (
@@ -991,42 +1224,49 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                           </div>
                         </div>
 
-                        {/* Action buttons */}
-                        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
-                          <button
-                            onClick={() => {
-                              loadQuestionForPreview(idx);
-                              setActiveTab('upload');
-                            }}
-                            style={{
-                              padding: '0.4rem 1rem',
-                              background: '#3b82f6',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontWeight: 600,
-                              fontSize: '0.8rem',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            ✏️ Edit Question
-                          </button>
-                          <button
-                            onClick={() => handleDeleteQuestion(q.id)}
-                            style={{
-                              padding: '0.4rem 1rem',
-                              background: '#ef4444',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontWeight: 600,
-                              fontSize: '0.8rem',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            🗑️ Delete Question
-                          </button>
-                        </div>
+                        {isPastDate ? (
+                          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                            <span style={{ background: '#cbd5e1', color: '#475569', fontSize: '0.8rem', fontWeight: 700, padding: '0.4rem 0.85rem', borderRadius: '6px' }}>
+                              🔒 Locked (Past Date - Read Only)
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                            <button
+                              onClick={() => {
+                                loadQuestionForPreview(q);
+                                setActiveTab('upload');
+                              }}
+                              style={{
+                                padding: '0.4rem 1.25rem',
+                                background: '#2563eb',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontWeight: 700,
+                                fontSize: '0.85rem',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              ✏️ Edit Question #{q.original_num}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteQuestion(q.id)}
+                              style={{
+                                padding: '0.4rem 1rem',
+                                background: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              🗑️ Delete Question
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1034,11 +1274,179 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
               </div>
             )}
           </div>
-        )}
+        );
+      })()}
+
+        {/* ===== TAB 2.5: View Uploaded Questions / Subject-Wise Question Bank ===== */}
+        {activeTab === 'questions' && (
+          <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '2rem', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.4rem', fontWeight: 800, margin: 0 }}>📚 Subject-Wise Question Bank</h2>
+                <p style={{ color: '#64748b', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                  Persistent repository of all uploaded questions organized by subject and date.
+                </p>
+              </div>
+              <span style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '0.85rem', fontWeight: 700, padding: '0.4rem 0.85rem', borderRadius: '20px' }}>
+                Total Bank: {customQuestions.length} Questions
+              </span>
+            </div>
+
+            {/* Subject Filter & Search Controls */}
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1.5rem', background: '#f8fafc', padding: '1rem', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+              <div style={{ flex: '1', minWidth: '220px' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Filter by Subject</label>
+                <select
+                  value={bankSubjectFilter}
+                  onChange={e => setBankSubjectFilter(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', fontWeight: 600, color: '#0f172a' }}
+                >
+                  <option value="All">All Subjects ({customQuestions.length} Questions)</option>
+                  {TOPICS.map(t => {
+                    const count = customQuestions.filter(q => q.section === t).length;
+                    return <option key={t} value={t}>{t} ({count})</option>;
+                  })}
+                </select>
+              </div>
+
+              <div style={{ flex: '1.5', minWidth: '240px' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Search Questions</label>
+                <input
+                  type="text"
+                  placeholder="🔍 Search question statement, level, ID..."
+                  value={bankSearchQuery}
+                  onChange={e => setBankSearchQuery(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', fontWeight: 500, color: '#0f172a' }}
+                />
+              </div>
+            </div>
+
+            {(() => {
+              const filteredBankQuestions = customQuestions.filter(q => {
+                const matchesSubject = bankSubjectFilter === 'All' || q.section === bankSubjectFilter;
+                const qStr = bankSearchQuery.toLowerCase().trim();
+                const matchesSearch = !qStr ||
+                  (q.question_text && q.question_text.toLowerCase().includes(qStr)) ||
+                  (q.section && q.section.toLowerCase().includes(qStr)) ||
+                  (q.level && q.level.toLowerCase().includes(qStr)) ||
+                  (q.id && q.id.toLowerCase().includes(qStr)) ||
+                  (q.original_num && q.original_num.toString().includes(qStr));
+
+                return matchesSubject && matchesSearch;
+              });
+
+              if (filteredBankQuestions.length === 0) {
+                return (
+                  <div style={{ textAlign: 'center', padding: '3rem 1.5rem', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+                    <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '1rem' }}>📭</span>
+                    <h3 style={{ fontSize: '1.1rem', color: '#0f172a', fontWeight: 700, marginBottom: '0.25rem' }}>No questions found</h3>
+                    <p style={{ fontSize: '0.875rem', color: '#64748b', margin: '0 0 1.5rem 0' }}>
+                      {bankSearchQuery || bankSubjectFilter !== 'All' ? 'Try adjusting your subject filter or search query.' : 'Click the Upload Question tab to start adding custom questions to the exam.'}
+                    </p>
+                    <button
+                      onClick={() => setActiveTab('upload')}
+                      style={{
+                        background: '#3b82f6',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '0.6rem 1.25rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ➕ Upload First Question
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {filteredBankQuestions.map((q, idx) => {
+                    const originalIdx = customQuestions.findIndex(item => item.id === q.id);
+                    return (
+                      <div key={q.id} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                              Question #{q.original_num}
+                            </span>
+                            <span style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                              {q.type}
+                            </span>
+                            <span style={{ background: '#f0fdf4', color: '#15803d', fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                              {q.marks} {q.marks === 1 ? 'Mark' : 'Marks'}
+                            </span>
+                            <span style={{ background: '#fef3c7', color: '#d97706', fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                              Level: {q.level || 'L1'}
+                            </span>
+                            {q.negative_marks > 0 && (
+                              <span style={{ background: '#fee2e2', color: '#b91c1c', fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                                -{q.negative_marks} Neg Marks
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                            Subject: <strong style={{ color: '#2563eb' }}>{q.section}</strong> {q.target_date && `| Target Date: ${q.target_date}`}
+                          </div>
+                        </div>
+
+                        {/* Large Question Image View */}
+                        {q.question_image && (
+                          <div style={{ marginBottom: '1rem', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '1rem', textAlign: 'center', overflow: 'hidden' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem', textAlign: 'left' }}>
+                              🖼️ Question Image View:
+                            </div>
+                            <img
+                              src={q.question_image}
+                              alt={`Question #${q.original_num}`}
+                              style={{ maxHeight: '320px', maxWidth: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
+                            />
+                          </div>
+                        )}
+
+                        {q.question_text && (
+                          <div style={{ fontSize: '0.95rem', color: '#1e293b', fontWeight: 500, marginBottom: '0.75rem', whiteSpace: 'pre-wrap', background: 'white', padding: '0.85rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                            {q.question_text}
+                          </div>
+                        )}
+
+                        {q.type !== 'NAT' && q.custom_options && (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', fontSize: '0.85rem', color: '#475569', marginBottom: '0.75rem' }}>
+                            {['A', 'B', 'C', 'D'].map((lbl, i) => {
+                              const val = q.custom_options[i] || '';
+                              const isImg = val.startsWith('data:image') || val.startsWith('http') || val.startsWith('blob:');
+                              return (
+                                <div key={lbl} style={{ background: 'white', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <strong style={{ color: '#0f172a' }}>{lbl}:</strong>
+                                  {isImg ? (
+                                    <img src={val} alt={`Opt ${lbl}`} style={{ maxHeight: '140px', maxWidth: '240px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #cbd5e1', padding: '0.2rem' }} />
+                                  ) : (
+                                    <span>{val}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                          <div style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                            <strong>Correct Answer:</strong> <span style={{ color: '#16a34a', fontWeight: 700 }}>{q.correct_answer}</span>
+                          </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
         {/* ===== TAB 3: Student Logs ===== */}
         {activeTab === 'logs' && (() => {
-          const filteredLogsByDate = studentLogs.filter(log => {
+          // 1. Filter logs by selected date
+          const dateFilteredLogs = studentLogs.filter(log => {
             if (!log.date) return false;
             try {
               const logLocalDate = new Date(log.date);
@@ -1051,62 +1459,419 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             }
           });
 
+          // 2. Filter logs by search query (Name or Reg No)
+          const q = logsSearchQuery.trim().toLowerCase();
+          let filteredLogsByDate = dateFilteredLogs.filter(log => {
+            if (!q) return true;
+            const nameMatch = log.studentName && log.studentName.toLowerCase().includes(q);
+            const regMatch = log.registerNumber && log.registerNumber.toString().toLowerCase().includes(q);
+            return nameMatch || regMatch;
+          });
+
+          // 3. Sort logs by selected criteria
+          filteredLogsByDate.sort((a, b) => {
+            if (logsSortBy === 'reg_asc') {
+              const regA = String(a.registerNumber || '').toLowerCase().trim();
+              const regB = String(b.registerNumber || '').toLowerCase().trim();
+              return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+            }
+            if (logsSortBy === 'reg_desc') {
+              const regA = String(a.registerNumber || '').toLowerCase().trim();
+              const regB = String(b.registerNumber || '').toLowerCase().trim();
+              return regB.localeCompare(regA, undefined, { numeric: true, sensitivity: 'base' });
+            }
+            if (logsSortBy === 'score_desc') {
+              return (b.score || 0) - (a.score || 0);
+            }
+            if (logsSortBy === 'score_asc') {
+              return (a.score || 0) - (b.score || 0);
+            }
+            if (logsSortBy === 'time_desc') {
+              return (b.timeSpent || 0) - (a.timeSpent || 0);
+            }
+            if (logsSortBy === 'time_asc') {
+              return (a.timeSpent || 0) - (b.timeSpent || 0);
+            }
+            // Default: date_desc (newest first)
+            return new Date(b.date || 0) - new Date(a.date || 0);
+          });
+
           const students3rd = studentsData["3rd Year"] || [];
-          const attended3rd = students3rd.filter(student => 
-            filteredLogsByDate.some(log => 
+          const attended3rdRaw = students3rd.filter(student => 
+            dateFilteredLogs.some(log => 
               (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
               (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
             )
           );
-          const notAttended3rd = students3rd.filter(student => 
-            !filteredLogsByDate.some(log => 
+          const notAttended3rdRaw = students3rd.filter(student => 
+            !dateFilteredLogs.some(log => 
               (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
               (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
             )
           );
 
           const students4th = studentsData["4th Year"] || [];
-          const attended4th = students4th.filter(student => 
-            filteredLogsByDate.some(log => 
+          const attended4thRaw = students4th.filter(student => 
+            dateFilteredLogs.some(log => 
               (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
               (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
             )
           );
-          const notAttended4th = students4th.filter(student => 
-            !filteredLogsByDate.some(log => 
+          const notAttended4thRaw = students4th.filter(student => 
+            !dateFilteredLogs.some(log => 
               (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
               (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
             )
           );
 
           const getLatestAttempt = (student) => {
-            return filteredLogsByDate.find(log => 
+            return dateFilteredLogs.find(log => 
               (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
               (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
             );
           };
 
+          const filterBySearch = (list) => {
+            if (!q) return list;
+            return list.filter(s => 
+              (s.name && s.name.toLowerCase().includes(q)) || 
+              (s.regNo && s.regNo.toString().toLowerCase().includes(q))
+            );
+          };
+
+          const sortAttendedList = (list) => {
+            return [...list].sort((s1, s2) => {
+              if (logsSortBy === 'reg_asc') {
+                const regA = String(s1.regNo || '').toLowerCase().trim();
+                const regB = String(s2.regNo || '').toLowerCase().trim();
+                return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+              }
+              if (logsSortBy === 'reg_desc') {
+                const regA = String(s1.regNo || '').toLowerCase().trim();
+                const regB = String(s2.regNo || '').toLowerCase().trim();
+                return regB.localeCompare(regA, undefined, { numeric: true, sensitivity: 'base' });
+              }
+              const l1 = getLatestAttempt(s1);
+              const l2 = getLatestAttempt(s2);
+              if (logsSortBy === 'score_desc') {
+                return (l2?.score || 0) - (l1?.score || 0);
+              }
+              if (logsSortBy === 'score_asc') {
+                return (l1?.score || 0) - (l2?.score || 0);
+              }
+              if (logsSortBy === 'time_desc') {
+                return (l2?.timeSpent || 0) - (l1?.timeSpent || 0);
+              }
+              if (logsSortBy === 'time_asc') {
+                return (l1?.timeSpent || 0) - (l2?.timeSpent || 0);
+              }
+              return new Date(l2?.date || 0) - new Date(l1?.date || 0);
+            });
+          };
+
+          const sortNotAttendedList = (list) => {
+            return [...list].sort((s1, s2) => {
+              if (logsSortBy === 'reg_desc') {
+                const regA = String(s1.regNo || '').toLowerCase().trim();
+                const regB = String(s2.regNo || '').toLowerCase().trim();
+                return regB.localeCompare(regA, undefined, { numeric: true, sensitivity: 'base' });
+              }
+              // Default reg_asc
+              const regA = String(s1.regNo || '').toLowerCase().trim();
+              const regB = String(s2.regNo || '').toLowerCase().trim();
+              return regA.localeCompare(regB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+          };
+
+          const attended3rd = sortAttendedList(filterBySearch(attended3rdRaw));
+          const notAttended3rd = sortNotAttendedList(filterBySearch(notAttended3rdRaw));
+          const attended4th = sortAttendedList(filterBySearch(attended4thRaw));
+          const notAttended4th = sortNotAttendedList(filterBySearch(notAttended4thRaw));
+
+          const handleExportPDF = () => {
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+              alert('Please allow popups for this site to export PDF.');
+              return;
+            }
+
+            const reportDate = selectedLogDate;
+            const activeSubject = examConfig.selectedTopic;
+
+            const show3rdAttended = logsFilter === 'all' || logsFilter === '3rd_all' || logsFilter === '3rd_attended';
+            const show3rdNotAttended = logsFilter === 'all' || logsFilter === '3rd_all' || logsFilter === '3rd_not_attended';
+            const show4thAttended = logsFilter === 'all' || logsFilter === '4th_all' || logsFilter === '4th_attended';
+            const show4thNotAttended = logsFilter === 'all' || logsFilter === '4th_all' || logsFilter === '4th_not_attended';
+
+            let table3rdAttendedHTML = '';
+            if (show3rdAttended) {
+              const rows = attended3rd.length === 0
+                ? '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 12px;">No 3rd year students attended on this date.</td></tr>'
+                : attended3rd.map(student => {
+                    const latestLog = getLatestAttempt(student);
+                    const d = latestLog ? new Date(latestLog.date) : null;
+                    const scoreStr = latestLog ? `${latestLog.score} / ${latestLog.totalMarks || latestLog.totalQuestions || 20}` : 'N/A';
+                    const accStr = latestLog ? `${latestLog.accuracy}%` : 'N/A';
+                    const timeStr = latestLog ? `${Math.floor(latestLog.timeSpent / 60)}m ${latestLog.timeSpent % 60}s` : 'N/A';
+                    const dateStr = d ? `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'N/A';
+                    return `<tr>
+                      <td><strong>${student.regNo}</strong></td>
+                      <td><strong>${student.name}</strong></td>
+                      <td>${latestLog?.topic || 'N/A'}</td>
+                      <td style="color: #2563eb; font-weight: bold;">${scoreStr}</td>
+                      <td>${accStr}</td>
+                      <td>${timeStr}</td>
+                      <td>${dateStr}</td>
+                    </tr>`;
+                  }).join('');
+
+              table3rdAttendedHTML = `
+                <h2>👥 3rd Year — Attended Students (${attended3rd.length} / ${students3rd.length})</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reg No</th>
+                      <th>Student Name</th>
+                      <th>Latest Topic</th>
+                      <th>Score / Max</th>
+                      <th>Accuracy</th>
+                      <th>Time Spent</th>
+                      <th>Attempt Date/Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>`;
+            }
+
+            let table3rdNotAttendedHTML = '';
+            if (show3rdNotAttended) {
+              const rows = notAttended3rd.length === 0
+                ? '<tr><td colspan="4" style="text-align: center; color: #059669; font-weight: bold; padding: 12px;">All 3rd year students have attended!</td></tr>'
+                : notAttended3rd.map(s => `<tr>
+                    <td><strong>${s.regNo}</strong></td>
+                    <td>${s.name}</td>
+                    <td>3rd Year</td>
+                    <td><span class="badge-not">Not Attended</span></td>
+                  </tr>`).join('');
+
+              table3rdNotAttendedHTML = `
+                <h2>❌ 3rd Year — Not Attended Students (${notAttended3rd.length} / ${students3rd.length})</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reg No</th>
+                      <th>Student Name</th>
+                      <th>Year</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>`;
+            }
+
+            let table4thAttendedHTML = '';
+            if (show4thAttended) {
+              const rows = attended4th.length === 0
+                ? '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 12px;">No final year students attended on this date.</td></tr>'
+                : attended4th.map(student => {
+                    const latestLog = getLatestAttempt(student);
+                    const d = latestLog ? new Date(latestLog.date) : null;
+                    const scoreStr = latestLog ? `${latestLog.score} / ${latestLog.totalMarks || latestLog.totalQuestions || 20}` : 'N/A';
+                    const accStr = latestLog ? `${latestLog.accuracy}%` : 'N/A';
+                    const timeStr = latestLog ? `${Math.floor(latestLog.timeSpent / 60)}m ${latestLog.timeSpent % 60}s` : 'N/A';
+                    const dateStr = d ? `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'N/A';
+                    return `<tr>
+                      <td><strong>${student.regNo}</strong></td>
+                      <td><strong>${student.name}</strong></td>
+                      <td>${latestLog?.topic || 'N/A'}</td>
+                      <td style="color: #2563eb; font-weight: bold;">${scoreStr}</td>
+                      <td>${accStr}</td>
+                      <td>${timeStr}</td>
+                      <td>${dateStr}</td>
+                    </tr>`;
+                  }).join('');
+
+              table4thAttendedHTML = `
+                <h2>👥 Final Year (4th Year) — Attended Students (${attended4th.length} / ${students4th.length})</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reg No</th>
+                      <th>Student Name</th>
+                      <th>Latest Topic</th>
+                      <th>Score / Max</th>
+                      <th>Accuracy</th>
+                      <th>Time Spent</th>
+                      <th>Attempt Date/Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>`;
+            }
+
+            let table4thNotAttendedHTML = '';
+            if (show4thNotAttended) {
+              const rows = notAttended4th.length === 0
+                ? '<tr><td colspan="4" style="text-align: center; color: #059669; font-weight: bold; padding: 12px;">All final year students have attended!</td></tr>'
+                : notAttended4th.map(s => `<tr>
+                    <td><strong>${s.regNo}</strong></td>
+                    <td>${s.name}</td>
+                    <td>Final Year</td>
+                    <td><span class="badge-not">Not Attended</span></td>
+                  </tr>`).join('');
+
+              table4thNotAttendedHTML = `
+                <h2>❌ Final Year (4th Year) — Not Attended Students (${notAttended4th.length} / ${students4th.length})</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reg No</th>
+                      <th>Student Name</th>
+                      <th>Year</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>`;
+            }
+
+            const htmlContent = `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <title>GATE_Exam_Report_${reportDate}</title>
+                <style>
+                  body { font-family: 'Segoe UI', Arial, sans-serif; padding: 25px; color: #0f172a; line-height: 1.5; background: #fff; }
+                  h1 { font-size: 22px; color: #0f172a; margin: 0 0 4px 0; font-weight: 800; }
+                  p { margin: 0 0 15px 0; color: #64748b; font-size: 13px; }
+                  .header-box { border-bottom: 3px solid #3b82f6; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+                  .summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+                  .card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; }
+                  .card-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+                  .card-val { font-size: 18px; font-weight: 800; color: #1e293b; margin-top: 4px; }
+                  h2 { font-size: 15px; margin-top: 24px; margin-bottom: 10px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
+                  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
+                  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+                  th { background-color: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
+                  .badge-attended { color: #065f46; background: #d1fae5; padding: 3px 8px; border-radius: 12px; font-weight: 700; font-size: 10px; display: inline-block; }
+                  .badge-not { color: #991b1b; background: #fee2e2; padding: 3px 8px; border-radius: 12px; font-weight: 700; font-size: 10px; display: inline-block; }
+                  @media print {
+                    @page { margin: 12mm; size: A4 portrait; }
+                    .no-print { display: none; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="no-print" style="margin-bottom: 15px; text-align: right;">
+                  <button onclick="window.print()" style="background: #3b82f6; color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px;">🖨️ Save as PDF / Print</button>
+                </div>
+
+                <div class="header-box">
+                  <div>
+                    <h1>🎓 GATE EE Daily Practice — Exam Report</h1>
+                    <p>Date: <strong>${reportDate}</strong> &nbsp;|&nbsp; Subject: <strong>${activeSubject}</strong></p>
+                  </div>
+                </div>
+
+                <div class="summary-cards">
+                  <div class="card">
+                    <div class="card-title">Total Attempts</div>
+                    <div class="card-val">${filteredLogsByDate.length}</div>
+                  </div>
+                  <div class="card">
+                    <div class="card-title">3rd Year Attended</div>
+                    <div class="card-val" style="color: #059669;">${attended3rd.length} / ${students3rd.length}</div>
+                  </div>
+                  <div class="card">
+                    <div class="card-title">Final Year Attended</div>
+                    <div class="card-val" style="color: #2563eb;">${attended4th.length} / ${students4th.length}</div>
+                  </div>
+                  <div class="card">
+                    <div class="card-title">Total Absent</div>
+                    <div class="card-val" style="color: #dc2626;">${notAttended3rd.length + notAttended4th.length}</div>
+                  </div>
+                </div>
+
+                ${table3rdAttendedHTML}
+                ${table3rdNotAttendedHTML}
+                ${table4thAttendedHTML}
+                ${table4thNotAttendedHTML}
+
+                <script>
+                  setTimeout(() => { window.print(); }, 500);
+                </script>
+              </body>
+              </html>
+            `;
+
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+          };
+
           return (
             <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '2rem', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '1.25rem' }}>
                 <div>
                   <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.4rem', fontWeight: 800, marginBottom: '0.25rem', margin: 0 }}>Student Exam Records</h2>
                   <p style={{ color: '#64748b', fontSize: '0.875rem', margin: 0 }}>
                     Detailed attempt logs showing accuracy, score, attendance, and duration for every exam session.
                   </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Select Date:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', width: '100%', marginTop: '0.5rem' }}>
+                  {/* Search Input */}
+                  <div style={{ position: 'relative', flex: '1', minWidth: '220px' }}>
+                    <input
+                      type="text"
+                      placeholder="🔍 Search student name or reg no..."
+                      value={logsSearchQuery}
+                      onChange={e => setLogsSearchQuery(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '0.6rem 2.2rem 0.6rem 0.9rem',
+                        borderRadius: '10px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.875rem',
+                        fontWeight: 500,
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: '#ffffff',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                      }}
+                    />
+                    {logsSearchQuery && (
+                      <button
+                        onClick={() => setLogsSearchQuery('')}
+                        style={{
+                          position: 'absolute',
+                          right: '10px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          fontSize: '0.8rem',
+                          color: '#94a3b8',
+                          cursor: 'pointer',
+                          fontWeight: 700
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Select Date */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Date:</span>
                     <input
                       type="date"
                       value={selectedLogDate}
                       onChange={e => setSelectedLogDate(e.target.value)}
                       style={{
-                        padding: '0.55rem 1rem',
+                        padding: '0.55rem 0.9rem',
                         borderRadius: '10px',
                         border: '1px solid #cbd5e1',
-                        fontSize: '0.9rem',
+                        fontSize: '0.875rem',
                         fontWeight: 600,
                         color: '#0f172a',
                         outline: 'none',
@@ -1115,16 +1880,46 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                       }}
                     />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Filter View:</span>
+
+                  {/* Sort By Dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Sort:</span>
+                    <select
+                      value={logsSortBy}
+                      onChange={e => setLogsSortBy(e.target.value)}
+                      style={{
+                        padding: '0.6rem 1rem',
+                        borderRadius: '10px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        color: '#0f172a',
+                        outline: 'none',
+                        background: 'white',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="reg_asc">🔢 Reg No: Low ➔ High (Default)</option>
+                      <option value="reg_desc">🔢 Reg No: High ➔ Low</option>
+                      <option value="score_desc">🏆 Score: High ➔ Low</option>
+                      <option value="score_asc">📉 Score: Low ➔ High</option>
+                      <option value="time_desc">⏱️ Time Spent: High ➔ Low</option>
+                      <option value="time_asc">⚡ Time Spent: Low ➔ High</option>
+                      <option value="date_desc">📅 Latest Attempts</option>
+                    </select>
+                  </div>
+
+                  {/* Filter View Dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>View:</span>
                     <select
                       value={logsFilter}
                       onChange={e => setLogsFilter(e.target.value)}
                       style={{
-                        padding: '0.6rem 1.25rem',
+                        padding: '0.6rem 1rem',
                         borderRadius: '10px',
                         border: '1px solid #cbd5e1',
-                        fontSize: '0.9rem',
+                        fontSize: '0.875rem',
                         fontWeight: 600,
                         color: '#0f172a',
                         outline: 'none',
@@ -1133,12 +1928,36 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                       }}
                     >
                       <option value="all">📝 All Attempt Logs ({filteredLogsByDate.length})</option>
-                      <option value="3rd_attended">👥 3rd Year - Attended ({attended3rd.length} / {students3rd.length})</option>
-                      <option value="3rd_not_attended">❌ 3rd Year - Not Attended ({notAttended3rd.length} / {students3rd.length})</option>
-                      <option value="4th_attended">👥 Final Year - Attended ({attended4th.length} / {students4th.length})</option>
-                      <option value="4th_not_attended">❌ Final Year - Not Attended ({notAttended4th.length} / {students4th.length})</option>
+                      <option value="3rd_all">👥 3rd Year - Full Report (Attended & Not Attended)</option>
+                      <option value="3rd_attended">👥 3rd Year - Attended Only ({attended3rd.length} / {students3rd.length})</option>
+                      <option value="3rd_not_attended">❌ 3rd Year - Not Attended Only ({notAttended3rd.length} / {students3rd.length})</option>
+                      <option value="4th_all">🎓 Final Year - Full Report (Attended & Not Attended)</option>
+                      <option value="4th_attended">👥 Final Year - Attended Only ({attended4th.length} / {students4th.length})</option>
+                      <option value="4th_not_attended">❌ Final Year - Not Attended Only ({notAttended4th.length} / {students4th.length})</option>
                     </select>
                   </div>
+
+                  {/* PDF Export Button */}
+                  <button
+                    onClick={handleExportPDF}
+                    style={{
+                      padding: '0.6rem 1.25rem',
+                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontWeight: 700,
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(239,68,68,0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    📄 Export Report (PDF)
+                  </button>
                 </div>
               </div>
 
@@ -1147,14 +1966,14 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                        {['Register Number', 'Student Name', 'Dept / Year', 'Subject', 'Attended', 'Correct', 'Score', 'Accuracy', 'Time Spent', 'Date'].map(h => (
+                        {['Register Number', 'Student Name', 'Dept / Year', 'Subject', 'Attended', 'Correct', 'Score / Max', 'Accuracy', 'Time Spent', 'Date'].map(h => (
                           <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {filteredLogsByDate.length === 0 ? (
-                        <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>No attempts recorded on this date.</td></tr>
+                        <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>{logsSearchQuery ? `No student logs matching "${logsSearchQuery}".` : 'No attempts recorded on this date.'}</td></tr>
                       ) : filteredLogsByDate.map((log, i) => {
                         const d = new Date(log.date);
                         const mins = Math.floor(log.timeSpent / 60);
@@ -1180,7 +1999,9 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                             <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', color: '#475569' }}>{log.topic}</td>
                             <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem' }}>{(log.totalQuestions - (log.unattemptedCount || 0))}/{log.totalQuestions}</td>
                             <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', fontWeight: 600, color: '#10b981' }}>{log.correctCount}</td>
-                            <td style={{ padding: '0.875rem 1rem', fontSize: '0.9rem', fontWeight: 700 }}>{log.score}</td>
+                            <td style={{ padding: '0.875rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: '#2563eb' }}>
+                              {log.score} <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>/ {log.totalMarks || log.totalQuestions || 20}</span>
+                            </td>
                             <td style={{ padding: '0.875rem 1rem' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <div style={{ width: '50px', height: '5px', borderRadius: '3px', background: '#e2e8f0', overflow: 'hidden' }}>
@@ -1189,7 +2010,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                                 <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{log.accuracy}%</span>
                               </div>
                             </td>
-                            <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b' }}>{mins}m {secs}s</td>
+                            <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>{mins}m {secs}s</td>
                             <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b' }}>{d.toLocaleDateString()} {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                           </tr>
                         );
@@ -1197,6 +2018,98 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     </tbody>
                   </table>
                 )}
+
+                {(logsFilter === '3rd_all' || logsFilter === '4th_all') && (() => {
+                  const is3rd = logsFilter === '3rd_all';
+                  const attList = is3rd ? attended3rd : attended4th;
+                  const notAttList = is3rd ? notAttended3rd : notAttended4th;
+                  const totalCount = is3rd ? students3rd.length : students4th.length;
+                  const yearName = is3rd ? '3rd Year' : 'Final Year (4th Year)';
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                      <div>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>
+                          👥 {yearName} — Attended Students ({attList.length} / {totalCount})
+                        </h3>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                              {['Register Number', 'Student Name', 'Status', 'Latest Topic', 'Score', 'Accuracy', 'Time Spent', 'Attempted Date'].map(h => (
+                                <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {attList.length === 0 ? (
+                              <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>{logsSearchQuery ? `No students matching "${logsSearchQuery}".` : 'No students attended on this date.'}</td></tr>
+                            ) : attList.map((student, i) => {
+                              const latestLog = getLatestAttempt(student);
+                              const d = latestLog ? new Date(latestLog.date) : null;
+                              return (
+                                <tr key={student.regNo || i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '0.875rem 1rem', fontWeight: 600, fontSize: '0.875rem', color: '#0f172a' }}>{student.regNo}</td>
+                                  <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', fontWeight: 500 }}>{student.name}</td>
+                                  <td style={{ padding: '0.875rem 1rem' }}>
+                                    <span style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: '#d1fae5', color: '#065f46' }}>Attended</span>
+                                  </td>
+                                  <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', color: '#475569' }}>{latestLog?.topic || 'N/A'}</td>
+                                   <td style={{ padding: '0.875rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: '#2563eb' }}>
+                                     {latestLog ? (
+                                       <>
+                                         {latestLog.score}{' '}
+                                         <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>
+                                           / {latestLog.totalMarks || latestLog.totalQuestions || 20}
+                                         </span>
+                                       </>
+                                     ) : (
+                                       'N/A'
+                                     )}
+                                   </td>
+                                  <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', fontWeight: 600 }}>{latestLog ? `${latestLog.accuracy}%` : 'N/A'}</td>
+                                  <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
+                                    {latestLog ? `${Math.floor(latestLog.timeSpent / 60)}m ${latestLog.timeSpent % 60}s` : 'N/A'}
+                                  </td>
+                                  <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b' }}>
+                                    {d ? `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'N/A'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div>
+                        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>
+                          ❌ {yearName} — Not Attended Students ({notAttList.length} / {totalCount})
+                        </h3>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '500px' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                              {['Register Number', 'Student Name', 'Status'].map(h => (
+                                <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.78rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {notAttList.length === 0 ? (
+                              <tr><td colSpan={3} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>{logsSearchQuery ? `No students matching "${logsSearchQuery}".` : 'All students have attended!'}</td></tr>
+                            ) : notAttList.map((student, i) => (
+                              <tr key={student.regNo || i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '0.875rem 1rem', fontWeight: 600, fontSize: '0.875rem', color: '#475569' }}>{student.regNo}</td>
+                                <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', color: '#334155' }}>{student.name}</td>
+                                <td style={{ padding: '0.875rem 1rem' }}>
+                                  <span style={{ padding: '0.25rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: '#fee2e2', color: '#991b1b' }}>Not Attended</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {(logsFilter === '3rd_attended' || logsFilter === '4th_attended') && (() => {
                   const list = logsFilter === '3rd_attended' ? attended3rd : attended4th;
@@ -1211,7 +2124,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                       </thead>
                       <tbody>
                         {list.length === 0 ? (
-                          <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>No students in this list.</td></tr>
+                          <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>{logsSearchQuery ? `No students matching "${logsSearchQuery}".` : 'No students in this list.'}</td></tr>
                         ) : list.map((student, i) => {
                           const latestLog = getLatestAttempt(student);
                           const d = latestLog ? new Date(latestLog.date) : null;
@@ -1225,7 +2138,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                               <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', color: '#475569' }}>{latestLog?.topic || 'N/A'}</td>
                               <td style={{ padding: '0.875rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: '#2563eb' }}>{latestLog ? latestLog.score : 'N/A'}</td>
                               <td style={{ padding: '0.875rem 1rem', fontSize: '0.875rem', fontWeight: 600 }}>{latestLog ? `${latestLog.accuracy}%` : 'N/A'}</td>
-                              <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b' }}>
+                              <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b', fontWeight: 600 }}>
                                 {latestLog ? `${Math.floor(latestLog.timeSpent / 60)}m ${latestLog.timeSpent % 60}s` : 'N/A'}
                               </td>
                               <td style={{ padding: '0.875rem 1rem', fontSize: '0.8rem', color: '#64748b' }}>
@@ -1252,7 +2165,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                       </thead>
                       <tbody>
                         {list.length === 0 ? (
-                          <tr><td colSpan={3} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>All students have attended!</td></tr>
+                          <tr><td colSpan={3} style={{ textAlign: 'center', padding: '2.5rem', color: '#94a3b8' }}>{logsSearchQuery ? `No students matching "${logsSearchQuery}".` : 'All students have attended!'}</td></tr>
                         ) : list.map((student, i) => (
                           <tr key={student.regNo || i} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '0.875rem 1rem', fontWeight: 600, fontSize: '0.875rem', color: '#475569' }}>{student.regNo}</td>

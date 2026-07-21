@@ -25,39 +25,54 @@ export default function CBTConsole({
 
   // Initialize test questions
   useEffect(() => {
-    // Filter questions by selected topic
-    let filtered = [];
-    if (selectedTopic === 'Full Syllabus') {
-      filtered = [...questionsList];
+    const todayDateStr = (() => {
+      const local = new Date();
+      const offset = local.getTimezoneOffset();
+      const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+      return adjusted.toISOString().split('T')[0];
+    })();
+
+    // 1. Check if custom questions exist specifically allotted for today's target date
+    const todayTargetQuestions = questionsList.filter(q => q.target_date ? q.target_date === todayDateStr : (q.id && q.id.startsWith('custom_')));
+
+    let selected = [];
+    if (todayTargetQuestions.length > 0) {
+      selected = [...todayTargetQuestions].sort((a, b) => (a.original_num || 0) - (b.original_num || 0));
     } else {
-      filtered = questionsList.filter(q => q.section === selectedTopic);
-    }
+      // Fallback: Filter by selected topic
+      let filtered = [];
+      if (selectedTopic === 'Full Syllabus') {
+        filtered = [...questionsList];
+      } else {
+        filtered = questionsList.filter(q => q.section === selectedTopic);
+      }
 
-    // Deduplicate: normalize question text and keep only unique questions
-    const seenTexts = new Set();
-    const deduped = [];
-    for (const q of filtered) {
-      const normText = (q.question_text || '').replace(/\s+/g, '').toLowerCase();
-      if (normText.length < 10) continue; // skip very short/empty entries
-      if (seenTexts.has(normText)) continue;
-      seenTexts.add(normText);
-      deduped.push(q);
-    }
+      // Deduplicate: normalize question text and keep only unique questions
+      const seenTexts = new Set();
+      const deduped = [];
+      for (const q of filtered) {
+        const normText = (q.question_text || '').replace(/\s+/g, '').toLowerCase();
+        if (normText.length < 10) continue; // skip very short/empty entries
+        if (seenTexts.has(normText)) continue;
+        seenTexts.add(normText);
+        deduped.push(q);
+      }
 
-    // Shuffle and pick requested number of questions
-    const shuffled = [...deduped].sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, Math.min(numQuestions, shuffled.length));
+      // Shuffle and pick requested number of questions
+      const shuffled = [...deduped].sort(() => 0.5 - Math.random());
+      selected = shuffled.slice(0, Math.min(numQuestions, shuffled.length));
 
-    // If we have fewer questions than requested, fallback to any EE questions to fill the gap
-    if (selected.length < numQuestions) {
-      const selectedIds = new Set(selected.map(s => s.id));
-      const selectedTexts = new Set(selected.map(s => (s.question_text || '').replace(/\s+/g, '').toLowerCase()));
-      const extraNeeded = numQuestions - selected.length;
-      const extraQuestions = questionsList
-        .filter(q => !selectedIds.has(q.id) && !selectedTexts.has((q.question_text || '').replace(/\s+/g, '').toLowerCase()))
-        .sort(() => 0.5 - Math.random())
-        .slice(0, extraNeeded);
-      selected.push(...extraQuestions);
+      // If we have fewer questions than requested, fallback to any EE questions to fill the gap
+      if (selected.length < numQuestions) {
+        const selectedIds = new Set(selected.map(s => s.id));
+        const selectedTexts = new Set(selected.map(s => (s.question_text || '').replace(/\s+/g, '').toLowerCase()));
+        const extraNeeded = numQuestions - selected.length;
+        const extraQuestions = questionsList
+          .filter(q => !selectedIds.has(q.id) && !selectedTexts.has((q.question_text || '').replace(/\s+/g, '').toLowerCase()))
+          .sort(() => 0.5 - Math.random())
+          .slice(0, extraNeeded);
+        selected.push(...extraQuestions);
+      }
     }
 
     setTestQuestions(selected);
@@ -506,8 +521,11 @@ export default function CBTConsole({
       };
     });
 
+    const totalMarks = testQuestions.reduce((sum, q) => sum + (parseInt(q.marks) || 1), 0);
+
     onFinish({
       score: Number(score.toFixed(2)),
+      totalMarks,
       totalQuestions: testQuestions.length,
       correctCount,
       incorrectCount,

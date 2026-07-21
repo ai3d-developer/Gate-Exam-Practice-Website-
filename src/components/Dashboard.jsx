@@ -34,7 +34,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   const [loadingLogs, setLoadingLogs] = useState(true);
 
   const currentHour = new Date().getHours();
-  const isOutsidePracticeHours = currentHour < 9 || currentHour >= 19;
+  const isOutsidePracticeHours = currentHour < 9 || currentHour >= 23;
 
   useEffect(() => {
     const regNo = studentDetails?.registerNumber || '';
@@ -423,7 +423,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
           )}
           {isOutsidePracticeHours && !hasAttended && (
             <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#f59e0b', fontWeight: 600 }}>
-              🕒 Daily practice exam is closed. Active hours are 9:00 AM to 7:00 PM.
+              🕒 Daily practice exam is closed. Active practice hours are 9:00 AM to 11:00 PM. Next date exam questions will open at 12:00 AM midnight.
             </p>
           )}
         </div>
