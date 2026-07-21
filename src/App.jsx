@@ -1,0 +1,420 @@
+import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { ref, get, child, set, push, onValue } from 'firebase/database';
+import { auth, db, signOut, ADMIN_EMAIL, handleRedirectResult } from './firebase';
+import LoginScreen from './components/LoginScreen';
+import Dashboard from './components/Dashboard';
+import CBTConsole from './components/CBTConsole';
+import Summary from './components/Summary';
+import AdminConsole from './components/AdminConsole';
+
+const isQuestionExpired = (id) => {
+  if (!id || !id.startsWith('custom_')) return false;
+  const tsStr = id.split('_')[1];
+  const ts = parseInt(tsStr, 10);
+  if (isNaN(ts)) return false;
+
+  const uploadDate = new Date(ts);
+  
+  // Calculate the expiration date/time for this upload (7:00 PM of upload day)
+  const expiryDate = new Date(uploadDate);
+  expiryDate.setHours(19, 0, 0, 0);
+  
+  if (uploadDate >= expiryDate) {
+    // If uploaded after 7:00 PM, it expires at 7:00 PM the next day
+    expiryDate.setDate(expiryDate.getDate() + 1);
+  }
+  
+  const now = new Date();
+  return now >= expiryDate;
+};
+
+export default function App() {
+  const [authUser, setAuthUser] = useState(undefined); // undefined = loading, null = not logged in
+  const [userRole, setUserRole] = useState(null); // 'ADMIN' | 'STUDENT'
+  const [currentScreen, setCurrentScreen] = useState('DASHBOARD');
+  const [questionsList, setQuestionsList] = useState([]);
+  const [answersDb, setAnswersDb] = useState({});
+  const [testConfig, setTestConfig] = useState({
+    selectedTopic: 'Full Syllabus',
+    numQuestions: 20,
+    timeLimit: 30
+  });
+  const [studentDetails, setStudentDetails] = useState({
+    name: '',
+    department: '',
+    year: '',
+    registerNumber: ''
+  });
+  const [testResult, setTestResult] = useState(null);
+  const [dbLoading, setDbLoading] = useState(true);
+  const [dbError, setDbError] = useState(null);
+  const [adminConfig, setAdminConfig] = useState(null);
+
+  // Auto-clean expired custom questions when loaded
+  useEffect(() => {
+    const cleanExpiredQuestions = async () => {
+      const expiredQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_') && isQuestionExpired(q.id));
+      if (expiredQuestions.length > 0) {
+        console.log("Automatically clearing expired custom questions:", expiredQuestions.map(q => q.id));
+        try {
+          for (const q of expiredQuestions) {
+            await set(ref(db, `custom_questions/${q.id}`), null);
+            await set(ref(db, `custom_answers/${q.id}`), null);
+          }
+          // Clear locally
+          const savedQ = localStorage.getItem('gate_cbt_custom_questions');
+          if (savedQ) {
+            const allQ = JSON.parse(savedQ).filter(q => !expiredQuestions.some(eq => eq.id === q.id));
+            localStorage.setItem('gate_cbt_custom_questions', JSON.stringify(allQ));
+          }
+          const savedA = localStorage.getItem('gate_cbt_custom_answers');
+          if (savedA) {
+            const allA = JSON.parse(savedA);
+            expiredQuestions.forEach(q => delete allA[q.id]);
+            localStorage.setItem('gate_cbt_custom_answers', JSON.stringify(allA));
+          }
+          setQuestionsList(prev => prev.filter(q => !expiredQuestions.some(eq => eq.id === q.id)));
+        } catch (err) {
+          console.warn("Failed to auto-clean expired questions:", err);
+        }
+      }
+    };
+    if (questionsList.length > 0) {
+      cleanExpiredQuestions();
+    }
+  }, [questionsList]);
+
+  // Handle Google redirect result (fallback when popup was blocked)
+  useEffect(() => {
+    handleRedirectResult().catch(console.error);
+  }, []);
+
+  // --- Auth Listener (Firebase & Local) ---
+  useEffect(() => {
+    const localUserJson = localStorage.getItem('gate_cbt_local_user');
+    if (localUserJson) {
+      try {
+        const user = JSON.parse(localUserJson);
+        setAuthUser(user);
+        setUserRole(user.role);
+        return;
+      } catch (e) {
+        console.error('Error parsing local user:', e);
+      }
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!localStorage.getItem('gate_cbt_local_user')) {
+        setAuthUser(user);
+        if (user) {
+          const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+          setUserRole(isAdmin ? 'ADMIN' : 'STUDENT');
+        } else {
+          setUserRole(null);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- Load exam databases in real-time ---
+  useEffect(() => {
+    setDbLoading(true);
+    const qRef = ref(db, 'custom_questions');
+    const aRef = ref(db, 'custom_answers');
+
+    const unsubQ = onValue(qRef, (snapshot) => {
+      let questions = [];
+      const val = snapshot.val();
+      if (val) {
+        questions = Object.values(val);
+      } else {
+        const customQJson = localStorage.getItem('gate_cbt_custom_questions');
+        if (customQJson) questions = JSON.parse(customQJson);
+      }
+      setQuestionsList(questions);
+      setDbLoading(false);
+    }, (err) => {
+      console.warn("Realtime DB questions subscription failed, loading from local:", err);
+      const customQJson = localStorage.getItem('gate_cbt_custom_questions');
+      if (customQJson) setQuestionsList(JSON.parse(customQJson));
+      setDbLoading(false);
+    });
+
+    const unsubA = onValue(aRef, (snapshot) => {
+      let answers = {};
+      const val = snapshot.val();
+      if (val) {
+        answers = val;
+      } else {
+        const customAJson = localStorage.getItem('gate_cbt_custom_answers');
+        if (customAJson) answers = JSON.parse(customAJson);
+      }
+      setAnswersDb(answers);
+    }, (err) => {
+      console.warn("Realtime DB answers subscription failed, loading from local:", err);
+      const customAJson = localStorage.getItem('gate_cbt_custom_answers');
+      if (customAJson) setAnswersDb(JSON.parse(customAJson));
+    });
+
+    return () => {
+      unsubQ();
+      unsubA();
+    };
+  }, []);
+
+  // --- Sync admin config in real-time (with local fallback) ---
+  useEffect(() => {
+    const configRef = ref(db, 'exam_config');
+    const unsubscribe = onValue(configRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setAdminConfig(data);
+      } else {
+        const saved = localStorage.getItem('gate_cbt_admin_exam_config');
+        if (saved) setAdminConfig(JSON.parse(saved));
+      }
+    }, (error) => {
+      console.warn("Firebase config subscription failed, loading from local:", error);
+      const saved = localStorage.getItem('gate_cbt_admin_exam_config');
+      if (saved) setAdminConfig(JSON.parse(saved));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync student details/profile in real-time
+  useEffect(() => {
+    if (authUser?.uid) {
+      const profileRef = ref(db, `student_profiles/${authUser.uid}`);
+      const unsubscribe = onValue(profileRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val) {
+          setStudentDetails(val);
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [authUser]);
+
+  const handleStartTest = (topic, count, time, details) => {
+    setTestConfig({ selectedTopic: topic, numQuestions: count, timeLimit: time });
+    if (details) {
+      setStudentDetails(details);
+      if (authUser?.uid) {
+        try {
+          set(ref(db, `student_profiles/${authUser.uid}`), details);
+        } catch (err) {
+          console.error("Failed to save student profile details:", err);
+        }
+      }
+    }
+    setCurrentScreen('TEST');
+  };
+
+  const handleSaveProfile = (details) => {
+    if (details) {
+      setStudentDetails(details);
+      if (authUser?.uid) {
+        try {
+          set(ref(db, `student_profiles/${authUser.uid}`), details);
+        } catch (err) {
+          console.error("Failed to save student profile details:", err);
+        }
+      }
+    }
+  };
+
+  const handleFinishTest = (results) => {
+    setTestResult(results);
+
+    // Save attempt to student logs
+    const savedLogs = localStorage.getItem('gate_cbt_student_logs');
+    const logs = savedLogs ? JSON.parse(savedLogs) : [];
+    const displayName = studentDetails.name || authUser?.displayName || authUser?.email || 'Student';
+
+    // Compile stats per Bloom's Level
+    const levelStats = results.reviewDetails ? results.reviewDetails.reduce((acc, q) => {
+      const lvl = q.level || 'L1';
+      if (!acc[lvl]) {
+        acc[lvl] = { correct: 0, incorrect: 0, unattempted: 0, total: 0 };
+      }
+      acc[lvl].total++;
+      if (q.isCorrect === 'correct') {
+        acc[lvl].correct++;
+      } else if (q.isCorrect === 'incorrect') {
+        acc[lvl].incorrect++;
+      } else {
+        acc[lvl].unattempted++;
+      }
+      return acc;
+    }, {}) : {};
+
+    const newLog = {
+      id: `log_${Date.now()}`,
+      studentName: displayName,
+      department: studentDetails.department || 'General',
+      year: studentDetails.year || 'N/A',
+      registerNumber: studentDetails.registerNumber || 'N/A',
+      avatarSeed: displayName.split(' ')[0],
+      studentPhoto: authUser?.photoURL || null,
+      date: new Date().toISOString(),
+      topic: testConfig.selectedTopic,
+      score: results.score,
+      totalQuestions: results.totalQuestions,
+      correctCount: results.correctCount,
+      incorrectCount: results.incorrectCount,
+      unattemptedCount: results.unattemptedCount,
+      accuracy: Math.round((results.correctCount / Math.max(results.totalQuestions, 1)) * 100),
+      timeSpent: results.timeSpent,
+      levelStats: levelStats
+    };
+    logs.unshift(newLog);
+    localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logs));
+
+    // Save attempt to student logs in Firebase Realtime DB structured by Year, Date, and RegisterNumber
+    try {
+      const year = studentDetails.year || '3rd Year';
+      const dateObj = new Date(newLog.date);
+      const offset = dateObj.getTimezoneOffset();
+      const adjusted = new Date(dateObj.getTime() - (offset * 60 * 1000));
+      const dateStr = adjusted.toISOString().split('T')[0];
+      const regNo = studentDetails.registerNumber || 'N-A';
+
+      const structuredLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
+      set(structuredLogRef, { ...newLog, id: regNo });
+    } catch (firebaseErr) {
+      console.error("Failed to save student attempt log to Firebase:", firebaseErr);
+    }
+
+    // Update stats
+    const savedStats = localStorage.getItem('gate_cbt_stats');
+    const stats = savedStats ? JSON.parse(savedStats) : { streak: 1, totalSolved: 0, accuracy: 0, coverage: 0 };
+    const updatedStats = {
+      streak: (stats.streak || 1) + 1,
+      totalSolved: (stats.totalSolved || 0) + results.correctCount,
+      accuracy: stats.totalSolved > 0
+        ? Math.round(((stats.accuracy || 0) * 3 + newLog.accuracy) / 4)
+        : newLog.accuracy,
+      coverage: Math.min(100, (stats.coverage || 0) + Math.round((results.totalQuestions / Math.max(questionsList.length, 1)) * 100))
+    };
+    localStorage.setItem('gate_cbt_stats', JSON.stringify(updatedStats));
+
+    setCurrentScreen('SUMMARY');
+  };
+
+  const handleBackToDashboard = () => {
+    setTestResult(null);
+    setCurrentScreen('DASHBOARD');
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    localStorage.removeItem('gate_cbt_local_user');
+    setAuthUser(null);
+    setUserRole(null);
+    setCurrentScreen('DASHBOARD');
+  };
+
+  // === LOADING STATES ===
+  if (authUser === undefined) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: 'white' }}>
+        <div style={{ width: '48px', height: '48px', border: '4px solid rgba(255,255,255,0.1)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LoginScreen onLoginSuccess={(user, role) => {
+      setAuthUser(user);
+      setUserRole(role);
+    }} />;
+  }
+
+  if (dbLoading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: 'white' }}>
+        <div style={{ width: '48px', height: '48px', border: '4px solid rgba(255,255,255,0.1)', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '1rem' }} />
+        <p style={{ color: '#94a3b8' }}>Loading GATE EE question database...</p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  if (dbError) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', color: '#0f172a', padding: '2rem', textAlign: 'center' }}>
+        <h1 style={{ color: '#ef4444' }}>⚠️ Configuration Error</h1>
+        <p style={{ color: '#475569' }}>{dbError}</p>
+        <button onClick={handleLogout} style={{ marginTop: '1rem', padding: '0.75rem 1.5rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Logout</button>
+      </div>
+    );
+  }
+
+  const handleClearAllQuestions = async () => {
+    const confirmClear = window.confirm("Are you sure you want to delete all uploaded questions? This will wipe the pool for students!");
+    if (!confirmClear) return;
+    try {
+      // Clear in Firebase Realtime DB
+      await set(ref(db, 'custom_questions'), null);
+      await set(ref(db, 'custom_answers'), null);
+      // Clear locally
+      localStorage.removeItem('gate_cbt_custom_questions');
+      localStorage.removeItem('gate_cbt_custom_answers');
+      // Reset state
+      setQuestionsList([]);
+      setAnswersDb({});
+      alert("All uploaded custom questions and answers have been successfully cleared!");
+    } catch (err) {
+      console.error("Failed to clear questions:", err);
+      alert("Failed to clear questions from Firebase. Check your database rules/permissions.");
+    }
+  };
+
+  // === ADMIN CONSOLE ===
+  if (userRole === 'ADMIN') {
+    return (
+      <AdminConsole
+        questionsList={questionsList}
+        onLogout={handleLogout}
+        authUser={authUser}
+        onClearAllQuestions={handleClearAllQuestions}
+      />
+    );
+  }
+
+  // === STUDENT SCREENS ===
+  return (
+    <>
+      {currentScreen === 'DASHBOARD' && (
+        <Dashboard
+          questionsList={questionsList}
+          onStartTest={handleStartTest}
+          adminConfig={adminConfig}
+          authUser={authUser}
+          onLogout={handleLogout}
+          studentDetails={studentDetails}
+          onSaveProfile={handleSaveProfile}
+        />
+      )}
+      {currentScreen === 'TEST' && (
+        <CBTConsole
+          selectedTopic={testConfig.selectedTopic}
+          numQuestions={testConfig.numQuestions}
+          timeLimit={testConfig.timeLimit}
+          questionsList={questionsList}
+          answersDb={answersDb}
+          onFinish={handleFinishTest}
+        />
+      )}
+      {currentScreen === 'SUMMARY' && (
+        <Summary
+          result={testResult}
+          onBackToDashboard={handleBackToDashboard}
+        />
+      )}
+    </>
+  );
+}
