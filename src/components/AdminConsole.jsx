@@ -266,6 +266,11 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     if (!confirmProceed) return;
 
     const newId = isEditing ? customQuestions[previewIndex].id : `custom_${Date.now()}`;
+    const optA = uploadForm.is_opt_image_a ? uploadForm.options_a : (uploadForm.options_a?.trim() || 'A');
+    const optB = uploadForm.is_opt_image_b ? uploadForm.options_b : (uploadForm.options_b?.trim() || 'B');
+    const optC = uploadForm.is_opt_image_c ? uploadForm.options_c : (uploadForm.options_c?.trim() || 'C');
+    const optD = uploadForm.is_opt_image_d ? uploadForm.options_d : (uploadForm.options_d?.trim() || 'D');
+
     const newQ = {
       id: newId,
       year: new Date().getFullYear().toString(),
@@ -280,7 +285,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       correct_answer: uploadForm.correct_answer,
       question_image: uploadForm.image,
       custom_options: uploadForm.type !== 'NAT'
-        ? [uploadForm.options_a, uploadForm.options_b, uploadForm.options_c, uploadForm.options_d]
+        ? [optA, optB, optC, optD]
         : [],
       negative_marks: parseFloat(uploadForm.negative_marks) || 0
     };
@@ -799,9 +804,9 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                         ) : (
                           <input
                             type="text"
-                            value={uploadForm[`options_${opt}`]}
+                            value={uploadForm[`options_${opt}`] !== undefined ? uploadForm[`options_${opt}`] : opt.toUpperCase()}
                             onChange={e => setUploadForm(p => ({ ...p, [`options_${opt}`]: e.target.value }))}
-                            placeholder={`Enter option ${opt.toUpperCase()}`}
+                            placeholder={opt.toUpperCase()}
                             required={uploadForm.type !== 'NAT'}
                             style={inputStyle}
                           />
