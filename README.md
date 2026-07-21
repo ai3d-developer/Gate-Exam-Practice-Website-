@@ -1,3 +1,9 @@
+# 🌐 Live Application Website
+
+🔗 **Live Website URL**: [https://gate-cd3f0.web.app](https://gate-cd3f0.web.app)
+
+---
+
 # 📝 GATE Exam Practice Website
 
 A premium Computer-Based Test (CBT) platform tailored for GATE EE (Electrical Engineering) aspirants. This application simulates realistic GATE exam conditions, provides deep cognitive analytics based on Bloom's Taxonomy, and allows administrators to assign tasks and track student progress in real-time.
@@ -12,21 +18,22 @@ A premium Computer-Based Test (CBT) platform tailored for GATE EE (Electrical En
 * **GATE Syllabus Access**: Easy syllabus breakdown and quick PDF download for focused prep.
 
 ### ⏱️ Realistic CBT Test Interface
-* **Practice Window**: Active daily from **9:00 AM to 7:00 PM** to build a structured routine.
+* **Practice Window**: Active daily from **9:00 AM to 11:00 PM** to build a structured routine. At 12:00 AM midnight, next date exam questions roll over automatically.
 * **One-Attempt Daily Limit**: Enforces discipline by allowing only one attempt per day on assigned exams.
 * **Virtual GATE Calculator**: A built-in scientific calculator matching the official GATE online interface to practice actual calculator-based calculations.
 * **Topic-wise & Full Syllabus Exams**: Practice specific sections like Electric Circuits, Power Systems, Control Systems, etc., or take full mock tests.
 
 ### 🛡️ Admin Console
-* **Exam Management**: Assign specific subjects, adjust question counts, and set customized time limits for daily practices.
-* **Student Log Tracker**: Monitor details such as scores, timestamps, duration spent, accuracy, and detailed breakdowns of cognitive level performance.
-* **Question Database Management**: Upload custom GATE questions directly from the console.
+* **Exam Management**: Assign specific subjects, adjust target date questions (up to 20 max), and set customized time limits for daily practices.
+* **Student Log Tracker**: Monitor details such as scores, timestamps, duration spent, accuracy, and detailed breakdowns of cognitive level performance. Export filtered reports to PDF.
+* **Question Database Management**: Upload custom GATE questions (Image or Manual Text) directly from the console.
 
 ---
 
 ## 🛠️ Technology Stack
 
 * **Frontend Framework**: [React](https://react.dev/) + [Vite](https://vite.dev/)
+* **Hosting**: [Firebase Hosting](https://gate-cd3f0.web.app)
 * **Database & Auth**: [Firebase](https://firebase.google.com/) (Realtime Database & Authentication)
 * **Styling**: Vanilla CSS (Rich gradients, glassmorphism, responsive grids)
 * **Charts**: Custom SVG-based progress bars and interactive charts for cross-platform efficiency.
@@ -34,6 +41,9 @@ A premium Computer-Based Test (CBT) platform tailored for GATE EE (Electrical En
 ---
 
 ## 🏃‍♂️ Getting Started
+
+### Live Demo
+Visit the live hosted site at [https://gate-cd3f0.web.app](https://gate-cd3f0.web.app).
 
 ### Prerequisites
 Make sure you have [Node.js](https://nodejs.org/) installed.
@@ -55,10 +65,11 @@ To launch the development server:
 npm run dev
 ```
 
-### Production Build
-To build and optimize the project for production deployment:
+### Production Build & Deploy
+To build and deploy the project to Firebase Hosting:
 ```bash
 npm run build
+npx firebase deploy
 ```
 
 ---
