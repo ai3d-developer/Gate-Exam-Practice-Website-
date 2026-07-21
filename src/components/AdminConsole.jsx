@@ -150,6 +150,14 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     return () => unsubscribe();
   }, []);
 
+  // Sync upload form section automatically with active examConfig selected topic
+  useEffect(() => {
+    if (previewIndex === -1 && examConfig.selectedTopic) {
+      const activeTopic = examConfig.selectedTopic === 'Full Syllabus' ? TOPICS[0] : examConfig.selectedTopic;
+      setUploadForm(prev => ({ ...prev, section: activeTopic }));
+    }
+  }, [examConfig.selectedTopic, previewIndex]);
+
   useEffect(() => {
     if (activeTab === 'logs') {
       const logsRef = ref(db, 'student_logs');
@@ -635,8 +643,14 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             )}
 
             <form onSubmit={handleUploadQuestion}>
-              {/* Row 1: Bloom's Level, Type, Marks, Negative Marks */}
+              {/* Row 1: Subject/Topic, Bloom's Level, Type, Marks, Negative Marks */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                <div>
+                  <label style={labelStyle}>Subject / Topic</label>
+                  <select value={uploadForm.section} onChange={e => setUploadForm(p => ({ ...p, section: e.target.value }))} style={inputStyle}>
+                    {TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
                 <div>
                   <label style={labelStyle}>Bloom's Level</label>
                   <select value={uploadForm.level} onChange={e => setUploadForm(p => ({ ...p, level: e.target.value }))} style={inputStyle}>
