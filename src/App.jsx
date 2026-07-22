@@ -97,42 +97,40 @@ export default function App() {
     handleRedirectResult().catch(console.error);
   }, []);
 
-  // --- Auth Listener (Firebase & Local) ---
+  // --- Auth Listener: Always use real Firebase auth (remove old fake local sessions) ---
   useEffect(() => {
+    // Auto-clear any OLD fake local user (uid starts with 'local_') — they can't write to Firebase
     const localUserJson = localStorage.getItem('gate_cbt_local_user');
     if (localUserJson) {
       try {
         const user = JSON.parse(localUserJson);
-        // Clear any old student logs from a previous user session
+        if (!user.uid || user.uid.startsWith('local_') || user.uid.startsWith('local_std_')) {
+          // Fake user — remove it and force real Firebase login
+          localStorage.removeItem('gate_cbt_local_user');
+          localStorage.removeItem('gate_cbt_student_logs');
+          localStorage.removeItem('gate_cbt_active_uid');
+          console.log('Cleared old fake local user session, requiring real Firebase login');
+        }
+      } catch (e) {
+        localStorage.removeItem('gate_cbt_local_user');
+      }
+    }
+
+    // Always use Firebase onAuthStateChanged as the single source of truth
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Clear old session logs if the user changed
         const prevUid = localStorage.getItem('gate_cbt_active_uid');
         if (prevUid && prevUid !== user.uid) {
           localStorage.removeItem('gate_cbt_student_logs');
         }
         localStorage.setItem('gate_cbt_active_uid', user.uid);
-        setAuthUser(user);
-        setUserRole(user.role);
-        return;
-      } catch (e) {
-        console.error('Error parsing local user:', e);
+        const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        setUserRole(isAdmin ? 'ADMIN' : 'STUDENT');
+      } else {
+        setUserRole(null);
       }
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!localStorage.getItem('gate_cbt_local_user')) {
-        if (user) {
-          // Clear old session logs if user changed
-          const prevUid = localStorage.getItem('gate_cbt_active_uid');
-          if (prevUid && prevUid !== user.uid) {
-            localStorage.removeItem('gate_cbt_student_logs');
-          }
-          localStorage.setItem('gate_cbt_active_uid', user.uid);
-          const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-          setUserRole(isAdmin ? 'ADMIN' : 'STUDENT');
-        } else {
-          setUserRole(null);
-        }
-        setAuthUser(user);
-      }
+      setAuthUser(user);
     });
     return () => unsubscribe();
   }, []);
@@ -438,7 +436,8 @@ export default function App() {
   // === STUDENT SCREENS ===
   return (
     <>
-      {currentScreen === 'DASHBOARD' && (
+      {/* Dashboard is always mounted so its Firebase listener stays live and data appears instantly */}
+      <div style={{ display: currentScreen === 'DASHBOARD' ? 'block' : 'none' }}>
         <Dashboard
           questionsList={questionsList}
           onStartTest={handleStartTest}
@@ -448,7 +447,7 @@ export default function App() {
           studentDetails={studentDetails}
           onSaveProfile={handleSaveProfile}
         />
-      )}
+      </div>
       {currentScreen === 'TEST' && (
         <CBTConsole
           selectedTopic={testConfig.selectedTopic}
