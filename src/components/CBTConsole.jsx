@@ -114,28 +114,32 @@ export default function CBTConsole({
   }, [timeLeft]);
 
   const isSubmittedRef = useRef(false);
+  const wasFullscreenEnteredRef = useRef(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
   const submitRef = useRef();
   submitRef.current = handleSubmit;
 
-  // Enforce fullscreen on start, auto-submit on exit or ESC key
+  // Track fullscreen mode and auto-submit strictly ONLY when fullscreen was active and is exited
   useEffect(() => {
-    const enterFs = async () => {
-      try {
-        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-          await document.documentElement.requestFullscreen();
-        }
-      } catch (err) {
-        console.warn("Fullscreen request rejected:", err);
-      }
-    };
-    enterFs();
+    if (document.fullscreenElement) {
+      wasFullscreenEnteredRef.current = true;
+    } else if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen()
+        .then(() => {
+          wasFullscreenEnteredRef.current = true;
+        })
+        .catch(err => {
+          console.warn("Fullscreen request rejected on mount:", err);
+        });
+    }
 
     const handleFsChange = () => {
-      if (!document.fullscreenElement && !isSubmittedRef.current) {
+      if (document.fullscreenElement) {
+        wasFullscreenEnteredRef.current = true;
+      } else if (wasFullscreenEnteredRef.current && !isSubmittedRef.current) {
         if (submitRef.current) {
-          submitRef.current(true, "Full screen mode exited! Your practice test has been automatically submitted successfully.");
+          submitRef.current(true, "Full screen mode exited! Your practice test has been automatically submitted.");
         }
       }
     };
@@ -143,7 +147,7 @@ export default function CBTConsole({
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && !isSubmittedRef.current) {
         if (submitRef.current) {
-          submitRef.current(true, "ESC key pressed! Your practice test has been automatically submitted successfully.");
+          submitRef.current(true, "ESC key pressed! Your practice test has been automatically submitted.");
         }
       }
     };
@@ -485,12 +489,6 @@ export default function CBTConsole({
       document.exitFullscreen().catch(() => {});
     }
 
-    if (isAutoSubmit && reason) {
-      alert(reason);
-    } else {
-      alert("Exam Submitted Successfully! 🎉");
-    }
-
     // Calculate final scores safely
     let score = 0;
     let correctCount = 0;
@@ -559,9 +557,10 @@ export default function CBTConsole({
     });
 
     const totalMarks = testQuestions.reduce((sum, q) => sum + (parseInt(q.marks) || 1), 0);
+    const finalScore = Number(score.toFixed(2));
 
     onFinish({
-      score: Number(score.toFixed(2)),
+      score: finalScore,
       totalMarks,
       totalQuestions: testQuestions.length,
       correctCount,
@@ -933,7 +932,11 @@ export default function CBTConsole({
 
           {/* Submit test button */}
           <div style={{ padding: '1rem', borderTop: '1px solid var(--ion-border)' }}>
-            <button className="cbt-btn cbt-btn-submit" style={{ width: '100%', padding: '0.6rem' }} onClick={() => setShowSubmitModal(true)}>
+            <button
+              className="cbt-btn cbt-btn-submit"
+              style={{ width: '100%', padding: '0.66rem', fontSize: '0.95rem', fontWeight: 800 }}
+              onClick={() => setShowSubmitModal(true)}
+            >
               Submit Exam
             </button>
           </div>
@@ -943,7 +946,7 @@ export default function CBTConsole({
       {/* Floating Scientific Calculator */}
       {showCalc && <Calculator onClose={() => setShowCalc(false)} />}
 
-      {/* Submit Confirmation Modal */}
+      {/* Center Submit Confirmation Modal */}
       {showSubmitModal && (
         <div style={{
           position: 'fixed',
@@ -951,8 +954,8 @@ export default function CBTConsole({
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(4px)',
+          background: 'rgba(15, 23, 42, 0.8)',
+          backdropFilter: 'blur(6px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -961,43 +964,88 @@ export default function CBTConsole({
         }}>
           <div style={{
             background: 'white',
-            borderRadius: '20px',
-            maxWidth: '480px',
+            borderRadius: '24px',
+            maxWidth: '520px',
             width: '100%',
-            padding: '2rem',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-            textAlign: 'center'
+            padding: '2.25rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+            textAlign: 'center',
+            border: '1px solid #e2e8f0',
+            animation: 'fadeInUp 0.25s ease-out'
           }}>
-            <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🎯</div>
-            <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
-              Submit Practice Test?
+            <div style={{ fontSize: '3.2rem', marginBottom: '0.5rem' }}>📋</div>
+            <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.4rem' }}>
+              Exam Submission Confirmation
             </h2>
-            <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-              Are you sure you want to finish and submit your exam?
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1.75rem' }}>
+              Please review your question attempts summary before final submission.
             </p>
 
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem', marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', textAlign: 'left', fontSize: '0.85rem' }}>
-              <div>Total Questions: <strong>{testQuestions.length}</strong></div>
-              <div>Answered: <strong style={{ color: '#16a34a' }}>{countAnswered + countMarkedAnswered}</strong></div>
-              <div>Marked for Review: <strong style={{ color: '#8b5cf6' }}>{countMarked}</strong></div>
-              <div>Unattempted: <strong style={{ color: '#dc2626' }}>{countNotAnswered + countNotVisited}</strong></div>
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              borderRadius: '16px',
+              padding: '1.25rem',
+              marginBottom: '1.75rem',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '1rem',
+              textAlign: 'left'
+            }}>
+              <div style={{ background: 'white', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Total Questions</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a' }}>{testQuestions.length}</div>
+              </div>
+              <div style={{ background: '#f0fdf4', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                <div style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 600, textTransform: 'uppercase' }}>Attended Questions</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#15803d' }}>{countAnswered + countMarkedAnswered}</div>
+              </div>
+              <div style={{ background: '#fef2f2', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #fecaca' }}>
+                <div style={{ fontSize: '0.75rem', color: '#991b1b', fontWeight: 600, textTransform: 'uppercase' }}>Not Attended</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#dc2626' }}>{countNotAnswered + countNotVisited}</div>
+              </div>
+              <div style={{ background: '#f5f3ff', padding: '0.75rem 1rem', borderRadius: '10px', border: '1px solid #ddd6fe' }}>
+                <div style={{ fontSize: '0.75rem', color: '#5b21b6', fontWeight: 600, textTransform: 'uppercase' }}>Marked For Review</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#7c3aed' }}>{countMarked}</div>
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
               <button
                 onClick={() => setShowSubmitModal(false)}
-                style={{ background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '10px', padding: '0.75rem 1.25rem', fontWeight: 600, cursor: 'pointer', flex: 1 }}
+                style={{
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '12px',
+                  padding: '0.85rem 1.25rem',
+                  fontWeight: 700,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  flex: 1
+                }}
               >
-                Return to Test
+                ↩️ Return to Exam
               </button>
               <button
                 onClick={() => {
                   setShowSubmitModal(false);
                   handleSubmit(false);
                 }}
-                style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.75rem 1.25rem', fontWeight: 700, cursor: 'pointer', flex: 1, boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '0.85rem 1.25rem',
+                  fontWeight: 800,
+                  fontSize: '0.95rem',
+                  cursor: 'pointer',
+                  flex: 1,
+                  boxShadow: '0 4px 14px rgba(16,185,129,0.35)'
+                }}
               >
-                Confirm Submit 🚀
+                Confirm Final Submit 🚀
               </button>
             </div>
           </div>

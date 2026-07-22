@@ -990,6 +990,13 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
 
             <form onSubmit={(e) => {
               e.preventDefault();
+              try {
+                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                }
+              } catch (fsErr) {
+                console.warn("Fullscreen request error:", fsErr);
+              }
               setShowDetailsModal(false);
               onStartTest(activeModalTest.topic, activeModalTest.count, activeModalTest.time, detailsForm, activeModalTest.testType, activeModalTest.targetDate);
             }}>

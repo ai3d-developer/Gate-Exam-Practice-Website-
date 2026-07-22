@@ -260,9 +260,30 @@ export default function Summary({ result, onBackToDashboard }) {
       <div className="summary-header">
         <div>
           <h1>Exam Submission Summary</h1>
-          <p style={{ color: '#475569', fontSize: '0.9rem', marginTop: '0.25rem' }}>Here is the detailed scorecard of your practice session</p>
+          <p style={{ color: '#475569', fontSize: '0.9rem', marginTop: '0.25rem' }}>Here is your detailed exam scorecard and performance metrics</p>
         </div>
-        <button className="btn-secondary" onClick={onBackToDashboard}>Back to Dashboard</button>
+        <button
+          onClick={onBackToDashboard}
+          style={{
+            background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            padding: '0.8rem 1.6rem',
+            fontWeight: 800,
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            transition: 'transform 0.15s ease'
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; }}
+          onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0px)'; }}
+        >
+          ⬅️ Back to Dashboard
+        </button>
       </div>
 
       <div className="review-grid">
