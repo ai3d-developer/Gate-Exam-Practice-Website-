@@ -233,87 +233,100 @@ export default function App() {
   };
 
   const handleFinishTest = (results) => {
-    setTestResult(results);
-
-    // Save attempt to student logs
-    const savedLogs = localStorage.getItem('gate_cbt_student_logs');
-    const logs = savedLogs ? JSON.parse(savedLogs) : [];
-    const displayName = studentDetails.name || authUser?.displayName || authUser?.email || 'Student';
-
-    // Compile stats per Bloom's Level
-    const levelStats = results.reviewDetails ? results.reviewDetails.reduce((acc, q) => {
-      const lvl = q.level || 'L1';
-      if (!acc[lvl]) {
-        acc[lvl] = { correct: 0, incorrect: 0, unattempted: 0, total: 0 };
-      }
-      acc[lvl].total++;
-      if (q.isCorrect === 'correct') {
-        acc[lvl].correct++;
-      } else if (q.isCorrect === 'incorrect') {
-        acc[lvl].incorrect++;
-      } else {
-        acc[lvl].unattempted++;
-      }
-      return acc;
-    }, {}) : {};
-
-    const calcTotalMarks = results.totalMarks || (results.reviewDetails ? results.reviewDetails.reduce((sum, q) => sum + (parseInt(q.marks) || 1), 0) : results.totalQuestions);
-
-    const newLog = {
-      id: `log_${Date.now()}`,
-      studentName: displayName,
-      department: studentDetails.department || 'General',
-      year: studentDetails.year || 'N/A',
-      registerNumber: studentDetails.registerNumber || 'N/A',
-      avatarSeed: displayName.split(' ')[0],
-      studentPhoto: authUser?.photoURL || null,
-      date: new Date().toISOString(),
-      testType: testConfig.testType || 'TODAY',
-      testDate: testConfig.targetDate || getLocalDateStr(),
-      topic: testConfig.selectedTopic,
-      score: results.score,
-      totalMarks: calcTotalMarks,
-      totalQuestions: results.totalQuestions,
-      correctCount: results.correctCount,
-      incorrectCount: results.incorrectCount,
-      unattemptedCount: results.unattemptedCount,
-      accuracy: Math.round((results.correctCount / Math.max(results.totalQuestions, 1)) * 100),
-      timeSpent: results.timeSpent,
-      levelStats: levelStats,
-      reviewDetails: results.reviewDetails || []
-    };
-    logs.unshift(newLog);
-    localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logs));
-
-    // Save attempt to student logs in Firebase Realtime DB structured by Year, Date, and RegisterNumber
     try {
-      const year = studentDetails.year || '3rd Year';
-      const dateObj = new Date(newLog.date);
-      const offset = dateObj.getTimezoneOffset();
-      const adjusted = new Date(dateObj.getTime() - (offset * 60 * 1000));
-      const dateStr = adjusted.toISOString().split('T')[0];
-      const regNo = studentDetails.registerNumber || 'N-A';
+      setTestResult(results);
 
-      const structuredLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
-      set(structuredLogRef, { ...newLog, id: regNo });
-    } catch (firebaseErr) {
-      console.error("Failed to save student attempt log to Firebase:", firebaseErr);
+      const sDetails = studentDetails || {};
+      const tConfig = testConfig || {};
+      const savedLogs = localStorage.getItem('gate_cbt_student_logs');
+      const logs = savedLogs ? JSON.parse(savedLogs) : [];
+      const displayName = sDetails.name || authUser?.displayName || authUser?.email || 'Student';
+
+      // Compile stats per Bloom's Level
+      const levelStats = (results && results.reviewDetails) ? results.reviewDetails.reduce((acc, q) => {
+        const lvl = q.level || 'L1';
+        if (!acc[lvl]) {
+          acc[lvl] = { correct: 0, incorrect: 0, unattempted: 0, total: 0 };
+        }
+        acc[lvl].total++;
+        if (q.isCorrect === 'correct') {
+          acc[lvl].correct++;
+        } else if (q.isCorrect === 'incorrect') {
+          acc[lvl].incorrect++;
+        } else {
+          acc[lvl].unattempted++;
+        }
+        return acc;
+      }, {}) : {};
+
+      const calcTotalMarks = (results && results.totalMarks) || (results && results.reviewDetails ? results.reviewDetails.reduce((sum, q) => sum + (parseInt(q.marks) || 1), 0) : (results ? results.totalQuestions : 1));
+
+      const newLog = {
+        id: `log_${Date.now()}`,
+        studentName: displayName,
+        department: sDetails.department || 'General',
+        year: sDetails.year || 'N/A',
+        registerNumber: sDetails.registerNumber || 'N/A',
+        avatarSeed: String(displayName).split(' ')[0],
+        studentPhoto: authUser?.photoURL || null,
+        date: new Date().toISOString(),
+        testType: tConfig.testType || 'TODAY',
+        testDate: tConfig.targetDate || getLocalDateStr(),
+        topic: tConfig.selectedTopic || 'GATE Practice',
+        score: results ? results.score : 0,
+        totalMarks: calcTotalMarks,
+        totalQuestions: results ? results.totalQuestions : 0,
+        correctCount: results ? results.correctCount : 0,
+        incorrectCount: results ? results.incorrectCount : 0,
+        unattemptedCount: results ? results.unattemptedCount : 0,
+        accuracy: Math.round(((results ? results.correctCount : 0) / Math.max(results ? results.totalQuestions : 1, 1)) * 100),
+        timeSpent: results ? results.timeSpent : 0,
+        levelStats: levelStats,
+        reviewDetails: results ? results.reviewDetails : []
+      };
+
+      logs.unshift(newLog);
+      localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logs));
+
+      // Save attempt to student logs in Firebase Realtime DB
+      try {
+        if (db) {
+          const year = sDetails.year || '3rd Year';
+          const dateObj = new Date(newLog.date);
+          const offset = dateObj.getTimezoneOffset();
+          const adjusted = new Date(dateObj.getTime() - (offset * 60 * 1000));
+          const dateStr = adjusted.toISOString().split('T')[0];
+          const rawRegNo = sDetails.registerNumber || 'N-A';
+          const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
+
+          const structuredLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
+          set(structuredLogRef, { ...newLog, id: regNo }).catch(err => console.warn("Firebase set log failed:", err));
+        }
+      } catch (firebaseErr) {
+        console.error("Failed to save student attempt log to Firebase:", firebaseErr);
+      }
+
+      // Update stats
+      try {
+        const savedStats = localStorage.getItem('gate_cbt_stats');
+        const stats = savedStats ? JSON.parse(savedStats) : { streak: 1, totalSolved: 0, accuracy: 0, coverage: 0 };
+        const updatedStats = {
+          streak: (stats.streak || 1) + 1,
+          totalSolved: (stats.totalSolved || 0) + (results ? results.correctCount : 0),
+          accuracy: (stats.totalSolved || 0) > 0
+            ? Math.round(((stats.accuracy || 0) * 3 + newLog.accuracy) / 4)
+            : newLog.accuracy,
+          coverage: Math.min(100, (stats.coverage || 0) + Math.round(((results ? results.totalQuestions : 0) / Math.max(questionsList.length, 1)) * 100))
+        };
+        localStorage.setItem('gate_cbt_stats', JSON.stringify(updatedStats));
+      } catch (statsErr) {
+        console.warn("Stats update failed:", statsErr);
+      }
+    } catch (err) {
+      console.error("Error in handleFinishTest:", err);
+    } finally {
+      setCurrentScreen('SUMMARY');
     }
-
-    // Update stats
-    const savedStats = localStorage.getItem('gate_cbt_stats');
-    const stats = savedStats ? JSON.parse(savedStats) : { streak: 1, totalSolved: 0, accuracy: 0, coverage: 0 };
-    const updatedStats = {
-      streak: (stats.streak || 1) + 1,
-      totalSolved: (stats.totalSolved || 0) + results.correctCount,
-      accuracy: stats.totalSolved > 0
-        ? Math.round(((stats.accuracy || 0) * 3 + newLog.accuracy) / 4)
-        : newLog.accuracy,
-      coverage: Math.min(100, (stats.coverage || 0) + Math.round((results.totalQuestions / Math.max(questionsList.length, 1)) * 100))
-    };
-    localStorage.setItem('gate_cbt_stats', JSON.stringify(updatedStats));
-
-    setCurrentScreen('SUMMARY');
   };
 
   const handleBackToDashboard = () => {
