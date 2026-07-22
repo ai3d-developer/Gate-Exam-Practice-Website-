@@ -267,6 +267,7 @@ export default function App() {
 
       const newLog = {
         id: `log_${Date.now()}`,
+        uid: authUser?.uid || null,
         studentName: displayName,
         department: sDetails.department || 'General',
         year: sDetails.year || 'N/A',

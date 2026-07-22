@@ -37,9 +37,28 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   const isOutsidePracticeHours = currentHour < 9 || currentHour >= 23;
 
   useEffect(() => {
-    const regNo = studentDetails?.registerNumber ? String(studentDetails.registerNumber).trim() : '';
-    const studentName = studentDetails?.name || authUser?.displayName || authUser?.email?.split('@')[0] || '';
+    const studentReg = studentDetails?.registerNumber ? String(studentDetails.registerNumber).trim() : '';
+    const studentName = studentDetails?.name ? String(studentDetails.name).trim() : (authUser?.displayName || authUser?.email?.split('@')[0] || '');
+    const studentUid = authUser?.uid || '';
+
     setLoadingLogs(true);
+
+    const isLogForCurrentStudent = (log) => {
+      if (!log) return false;
+      // 1. Match by Register Number if available and valid
+      if (studentReg && log.registerNumber && String(log.registerNumber).trim() !== 'N/A' && String(log.registerNumber).trim() !== 'N-A') {
+        return String(log.registerNumber).trim() === studentReg;
+      }
+      // 2. Match by Auth UID
+      if (studentUid && log.uid) {
+        return log.uid === studentUid;
+      }
+      // 3. Match by exact Student Name (excluding generic fallback 'Student')
+      if (studentName && studentName.toLowerCase() !== 'student' && log.studentName) {
+        return String(log.studentName).trim().toLowerCase() === studentName.toLowerCase();
+      }
+      return false;
+    };
 
     const logsRef = ref(db, 'student_logs');
     const unsubscribe = onValue(logsRef, (snapshot) => {
@@ -58,7 +77,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
         recurse(data);
       }
 
-      // Merge with localStorage logs to ensure zero missing attempts
+      // Merge with localStorage logs
       const rawLocal = localStorage.getItem('gate_cbt_student_logs');
       if (rawLocal) {
         try {
@@ -71,18 +90,10 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
         } catch (e) {}
       }
 
-      // Filter by registerNumber or studentName
-      let finalLogs = allFetchedLogs;
-      if (regNo || studentName) {
-        finalLogs = allFetchedLogs.filter(log => {
-          if (!log) return false;
-          const matchReg = regNo && log.registerNumber && String(log.registerNumber).trim() === regNo;
-          const matchName = studentName && log.studentName && String(log.studentName).trim().toLowerCase() === studentName.toLowerCase();
-          return matchReg || matchName;
-        });
-      }
-
+      // Strictly isolate logs for current student only
+      const finalLogs = allFetchedLogs.filter(isLogForCurrentStudent);
       finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+
       setStudentLogs(finalLogs);
       setLoadingLogs(false);
     }, (error) => {
@@ -92,16 +103,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
       if (rawLocal) {
         try {
           const localLogs = JSON.parse(rawLocal);
-          if (regNo || studentName) {
-            finalLogs = localLogs.filter(log => {
-              if (!log) return false;
-              const matchReg = regNo && log.registerNumber && String(log.registerNumber).trim() === regNo;
-              const matchName = studentName && log.studentName && String(log.studentName).trim().toLowerCase() === studentName.toLowerCase();
-              return matchReg || matchName;
-            });
-          } else {
-            finalLogs = localLogs;
-          }
+          finalLogs = localLogs.filter(isLogForCurrentStudent);
           finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
         } catch (e) {}
       }
