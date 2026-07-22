@@ -1,0 +1,53 @@
+{
+  "rules": {
+    "custom_questions": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+    },
+    "custom_answers": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+    },
+    "exam_config": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+    },
+    "daily_exam_config": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+    },
+    "daily_questions": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+    },
+    "question_bank": {
+      ".read": true,
+      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+    },
+    "student_profiles": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "user_logs": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'Gate2026@gmail.com')",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "student_logs": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "student_attempts": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "attempts_pool": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
