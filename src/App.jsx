@@ -300,16 +300,20 @@ export default function App() {
           const offset = dateObj.getTimezoneOffset();
           const adjusted = new Date(dateObj.getTime() - (offset * 60 * 1000));
           const dateStr = adjusted.toISOString().split('T')[0];
-          const rawRegNo = sDetails.registerNumber || 'N-A';
+          const rawRegNo = sDetails.registerNumber || sDetails.name || 'N-A';
           const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
 
-          // Save structured log for admin tracking
+          // 1. Save structured log for year & date tracking
           const structuredLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
           set(structuredLogRef, { ...newLog, id: regNo }).catch(err => console.warn("Firebase set log failed:", err));
 
-          // Save flat log for direct history queries
+          // 2. Save flat log by log ID
           const flatLogRef = ref(db, `student_attempts/${newLog.id}`);
           set(flatLogRef, newLog).catch(err => console.warn("Firebase set flat log failed:", err));
+
+          // 3. Push to global real-time attempts list
+          const pushRef = push(ref(db, `attempts_pool`));
+          set(pushRef, newLog).catch(err => console.warn("Firebase push attempt failed:", err));
         }
       } catch (firebaseErr) {
         console.error("Failed to save student attempt log to Firebase:", firebaseErr);

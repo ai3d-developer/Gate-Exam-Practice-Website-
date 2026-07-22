@@ -13,6 +13,7 @@ import { getDatabase } from 'firebase/database';
 const firebaseConfig = {
   apiKey: "AIzaSyAr-VuJ9PILcYH45V6-YZcP5T8dNAgXkD4",
   authDomain: "gate-cd3f0.firebaseapp.com",
+  databaseURL: "https://gate-cd3f0-default-rtdb.firebaseio.com",
   projectId: "gate-cd3f0",
   storageBucket: "gate-cd3f0.firebasestorage.app",
   messagingSenderId: "410331262912",
@@ -22,7 +23,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getDatabase(app);
+export const db = getDatabase(app, "https://gate-cd3f0-default-rtdb.firebaseio.com");
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('email');
