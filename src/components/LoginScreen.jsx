@@ -62,8 +62,10 @@ export default function LoginScreen({ onLoginSuccess }) {
         throw new Error('Password must be at least 4 characters.');
       }
 
+      // Generate a stable UID derived from the username so that logs persist across logins
+      const stableUid = 'local_' + btoa(studentEmail.toLowerCase().split('@')[0]).replace(/[^a-zA-Z0-9]/g, '');
       const mockUser = {
-        uid: 'local_std_' + Date.now(),
+        uid: stableUid,
         email: studentEmail.includes('@') ? studentEmail.toLowerCase() : `${studentEmail.toLowerCase()}@student.com`,
         displayName: studentEmail.split('@')[0],
         role: 'STUDENT'

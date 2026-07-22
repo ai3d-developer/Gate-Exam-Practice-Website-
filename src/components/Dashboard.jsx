@@ -14,7 +14,7 @@ const BLOOMS_LEVELS = [
 
 export default function Dashboard({ questionsList, onStartTest, adminConfig, authUser, onLogout, studentDetails, onSaveProfile }) {
   // User stats from localStorage
-  const [stats, setStats] = useState({ streak: 1, totalSolved: 0, accuracy: 0, coverage: 0 });
+  const [stats, setStats] = useState({ streak: 0, totalSolved: 0, accuracy: 0, coverage: 0 });
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [detailsForm, setDetailsForm] = useState({
@@ -38,25 +38,32 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
 
   useEffect(() => {
     const studentReg = studentDetails?.registerNumber ? String(studentDetails.registerNumber).trim() : '';
-    const studentName = studentDetails?.name ? String(studentDetails.name).trim() : (authUser?.displayName || authUser?.email?.split('@')[0] || '');
+    const studentName = studentDetails?.name
+      ? String(studentDetails.name).trim()
+      : (authUser?.displayName || authUser?.email?.split('@')[0] || '');
     const studentUid = authUser?.uid || '';
 
     setLoadingLogs(true);
 
     const isLogForCurrentStudent = (log) => {
       if (!log) return false;
-      // 1. Match by Register Number if available and valid
-      if (studentReg && log.registerNumber && String(log.registerNumber).trim() !== 'N/A' && String(log.registerNumber).trim() !== 'N-A') {
-        return String(log.registerNumber).trim() === studentReg;
-      }
-      // 2. Match by Auth UID
-      if (studentUid && log.uid) {
-        return log.uid === studentUid;
-      }
-      // 3. Match by exact Student Name (excluding generic fallback 'Student')
-      if (studentName && studentName.toLowerCase() !== 'student' && log.studentName) {
-        return String(log.studentName).trim().toLowerCase() === studentName.toLowerCase();
-      }
+      // 1. Always match by Firebase/stable UID first (most reliable)
+      if (studentUid && log.uid && log.uid === studentUid) return true;
+      // 2. Match by Register Number (when filled)
+      if (
+        studentReg &&
+        studentReg !== 'N/A' &&
+        log.registerNumber &&
+        String(log.registerNumber).trim() === studentReg
+      ) return true;
+      // 3. Match by exact Student Name as last resort (only if no uid stored)
+      if (
+        !log.uid &&
+        studentName &&
+        studentName.toLowerCase() !== 'student' &&
+        log.studentName &&
+        String(log.studentName).trim().toLowerCase() === studentName.toLowerCase()
+      ) return true;
       return false;
     };
 
