@@ -38,6 +38,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
 
   useEffect(() => {
     const regNo = studentDetails?.registerNumber ? String(studentDetails.registerNumber).trim() : '';
+    const studentName = studentDetails?.name || authUser?.displayName || authUser?.email?.split('@')[0] || '';
     setLoadingLogs(true);
 
     const logsRef = ref(db, 'student_logs');
@@ -63,19 +64,21 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
         try {
           const localLogs = JSON.parse(rawLocal);
           localLogs.forEach(loc => {
-            if (!allFetchedLogs.some(f => f.id === loc.id || (f.date === loc.date && f.registerNumber === loc.registerNumber))) {
+            if (!allFetchedLogs.some(f => f.id === loc.id || (f.date === loc.date && f.studentName === loc.studentName))) {
               allFetchedLogs.push(loc);
             }
           });
         } catch (e) {}
       }
 
-      // Filter by registerNumber if available, else show all local attempts
+      // Filter by registerNumber or studentName
       let finalLogs = allFetchedLogs;
-      if (regNo) {
+      if (regNo || studentName) {
         finalLogs = allFetchedLogs.filter(log => {
-          if (!log || !log.registerNumber) return false;
-          return String(log.registerNumber).trim() === regNo;
+          if (!log) return false;
+          const matchReg = regNo && log.registerNumber && String(log.registerNumber).trim() === regNo;
+          const matchName = studentName && log.studentName && String(log.studentName).trim().toLowerCase() === studentName.toLowerCase();
+          return matchReg || matchName;
         });
       }
 
@@ -89,9 +92,16 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
       if (rawLocal) {
         try {
           const localLogs = JSON.parse(rawLocal);
-          finalLogs = regNo
-            ? localLogs.filter(log => log && log.registerNumber && String(log.registerNumber).trim() === regNo)
-            : localLogs;
+          if (regNo || studentName) {
+            finalLogs = localLogs.filter(log => {
+              if (!log) return false;
+              const matchReg = regNo && log.registerNumber && String(log.registerNumber).trim() === regNo;
+              const matchName = studentName && log.studentName && String(log.studentName).trim().toLowerCase() === studentName.toLowerCase();
+              return matchReg || matchName;
+            });
+          } else {
+            finalLogs = localLogs;
+          }
           finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
         } catch (e) {}
       }
@@ -200,60 +210,59 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   };
 
   studentLogs.forEach(log => {
-    if (log.levelStats) {
+    let hasAddedData = false;
+    if (log.levelStats && typeof log.levelStats === 'object') {
       Object.keys(log.levelStats).forEach(lvl => {
-        if (levelAggregates[lvl]) {
-          levelAggregates[lvl].correct += log.levelStats[lvl].correct || 0;
-          levelAggregates[lvl].incorrect += log.levelStats[lvl].incorrect || 0;
-          levelAggregates[lvl].total += log.levelStats[lvl].total || 0;
+        let targetKey = lvl;
+        if (lvl === 'Remember') targetKey = 'L1';
+        if (lvl === 'Understand') targetKey = 'L2';
+        if (lvl === 'Apply') targetKey = 'L3';
+        if (lvl === 'Analyze') targetKey = 'L4';
+        if (lvl === 'Evaluate') targetKey = 'L5';
+        if (lvl === 'Create') targetKey = 'L6';
+
+        if (levelAggregates[targetKey]) {
+          const item = log.levelStats[lvl];
+          const c = typeof item === 'number' ? item : (item?.correct || 0);
+          const ic = typeof item === 'number' ? 0 : (item?.incorrect || 0);
+          const t = typeof item === 'number' ? item : (item?.total || (c + ic + (item?.unattempted || 0)));
+
+          levelAggregates[targetKey].correct += c;
+          levelAggregates[targetKey].incorrect += ic;
+          levelAggregates[targetKey].total += t;
+          if (t > 0 || c > 0 || ic > 0) hasAddedData = true;
         }
-      });
-    } else {
-      // Fallback: estimate/distribute counts across levels based on typical GATE EE distribution
-      let rc = log.correctCount || 0;
-      let ric = log.incorrectCount || 0;
-      
-      const distribute = (count, key) => {
-        let temp = count;
-        // L3 (45%)
-        const l3Amt = Math.min(temp, Math.round(count * 0.45));
-        levelAggregates.L3[key] += l3Amt;
-        temp -= l3Amt;
-
-        // L2 (20%)
-        const l2Amt = Math.min(temp, Math.round(count * 0.20));
-        levelAggregates.L2[key] += l2Amt;
-        temp -= l2Amt;
-
-        // L1 (15%)
-        const l1Amt = Math.min(temp, Math.round(count * 0.15));
-        levelAggregates.L1[key] += l1Amt;
-        temp -= l1Amt;
-
-        // L4 (15%)
-        const l4Amt = Math.min(temp, Math.round(count * 0.15));
-        levelAggregates.L4[key] += l4Amt;
-        temp -= l4Amt;
-
-        // L5 (5%)
-        const l5Amt = Math.min(temp, Math.round(count * 0.05));
-        levelAggregates.L5[key] += l5Amt;
-        temp -= l5Amt;
-
-        // Leftovers to L3
-        if (temp > 0) {
-          levelAggregates.L3[key] += temp;
-        }
-      };
-
-      distribute(rc, 'correct');
-      distribute(ric, 'incorrect');
-      
-      // Compute totals
-      Object.keys(levelAggregates).forEach(lvl => {
-        levelAggregates[lvl].total = levelAggregates[lvl].correct + levelAggregates[lvl].incorrect;
       });
     }
+
+    if (!hasAddedData && log.totalQuestions > 0) {
+      // Fallback: distribute counts across levels based on typical GATE EE distribution
+      let rc = log.correctCount || 0;
+      let ric = log.incorrectCount || 0;
+      let qTotal = log.totalQuestions || (rc + ric + (log.unattemptedCount || 0));
+
+      // Primary allocation to L3 (Apply) and L2 (Understand)
+      const l3Correct = Math.round(rc * 0.5);
+      const l3Incorrect = Math.round(ric * 0.5);
+      const l3Total = Math.round(qTotal * 0.5);
+
+      levelAggregates.L3.correct += l3Correct;
+      levelAggregates.L3.incorrect += l3Incorrect;
+      levelAggregates.L3.total += l3Total;
+
+      const l2Correct = rc - l3Correct;
+      const l2Incorrect = ric - l3Incorrect;
+      const l2Total = qTotal - l3Total;
+
+      levelAggregates.L2.correct += l2Correct;
+      levelAggregates.L2.incorrect += l2Incorrect;
+      levelAggregates.L2.total += l2Total;
+    }
+  });
+
+  // Ensure total is at least correct + incorrect
+  Object.keys(levelAggregates).forEach(lvl => {
+    levelAggregates[lvl].total = Math.max(levelAggregates[lvl].total, levelAggregates[lvl].correct + levelAggregates[lvl].incorrect);
   });
 
   const effectiveConfig = adminConfig || { selectedTopic: 'Full Syllabus', numQuestions: 20, timeLimit: 30 };
@@ -305,31 +314,32 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   });
   const [selectedAnswersLog, setSelectedAnswersLog] = useState(null);
 
-  // Attendance checks
+  // Attendance checks - bulletproof matching by testDate, testType, or ISO date string
+  const todayDateObjStr = new Date().toDateString();
+  const yesterdayDateObjStr = yesterdayObj.toDateString();
+
   const hasAttendedToday = studentLogs.some(log => {
     if (!log) return false;
-    if (log.testDate) return log.testDate === todayDateStr;
+    if (log.testDate && log.testDate === todayDateStr) return true;
     try {
-      const logDate = new Date(log.date).toDateString();
-      const todayDate = new Date().toDateString();
-      return logDate === todayDate;
-    } catch (e) {
-      return false;
-    }
+      const d = new Date(log.date);
+      if (d.toISOString().split('T')[0] === todayDateStr || d.toDateString() === todayDateObjStr) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
   });
 
   const hasAttendedYesterday = studentLogs.some(log => {
     if (!log) return false;
-    if (log.testDate) return log.testDate === yesterdayDateStr;
-    if (log.testType === 'YESTERDAY') {
-      try {
-        const logDate = new Date(log.date).toDateString();
-        const todayDate = new Date().toDateString();
-        return logDate === todayDate;
-      } catch (e) {
-        return false;
+    if (log.testDate && log.testDate === yesterdayDateStr) return true;
+    if (log.testType === 'YESTERDAY') return true;
+    try {
+      const d = new Date(log.date);
+      if (d.toISOString().split('T')[0] === yesterdayDateStr || d.toDateString() === yesterdayDateObjStr) {
+        return true;
       }
-    }
+    } catch (e) {}
     return false;
   });
 
