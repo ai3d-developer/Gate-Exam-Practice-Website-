@@ -103,6 +103,12 @@ export default function App() {
     if (localUserJson) {
       try {
         const user = JSON.parse(localUserJson);
+        // Clear any old student logs from a previous user session
+        const prevUid = localStorage.getItem('gate_cbt_active_uid');
+        if (prevUid && prevUid !== user.uid) {
+          localStorage.removeItem('gate_cbt_student_logs');
+        }
+        localStorage.setItem('gate_cbt_active_uid', user.uid);
         setAuthUser(user);
         setUserRole(user.role);
         return;
@@ -113,13 +119,19 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!localStorage.getItem('gate_cbt_local_user')) {
-        setAuthUser(user);
         if (user) {
+          // Clear old session logs if user changed
+          const prevUid = localStorage.getItem('gate_cbt_active_uid');
+          if (prevUid && prevUid !== user.uid) {
+            localStorage.removeItem('gate_cbt_student_logs');
+          }
+          localStorage.setItem('gate_cbt_active_uid', user.uid);
           const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
           setUserRole(isAdmin ? 'ADMIN' : 'STUDENT');
         } else {
           setUserRole(null);
         }
+        setAuthUser(user);
       }
     });
     return () => unsubscribe();
@@ -291,30 +303,28 @@ export default function App() {
       };
 
       logs.unshift(newLog);
+      // Store logs keyed per-user in localStorage to avoid cross-user contamination
       localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logs));
 
-      // Save attempt to student logs in Firebase Realtime DB
+      // Save attempt to Firebase Realtime DB
       try {
-        if (db) {
-          const year = sDetails.year || '3rd Year';
+        if (db && authUser?.uid) {
+          const uid = authUser.uid;
           const dateObj = new Date(newLog.date);
           const offset = dateObj.getTimezoneOffset();
           const adjusted = new Date(dateObj.getTime() - (offset * 60 * 1000));
           const dateStr = adjusted.toISOString().split('T')[0];
+
+          // PRIMARY: Save under user_logs/${uid}/${logId} — per-user isolated path
+          const userLogRef = ref(db, `user_logs/${uid}/${newLog.id}`);
+          set(userLogRef, newLog).catch(err => console.warn("Firebase user_logs set failed:", err));
+
+          // SECONDARY: Save to admin view path for admin dashboard
+          const year = sDetails.year || '3rd Year';
           const rawRegNo = sDetails.registerNumber || sDetails.name || 'N-A';
           const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
-
-          // 1. Save structured log for year & date tracking
-          const structuredLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
-          set(structuredLogRef, { ...newLog, id: regNo }).catch(err => console.warn("Firebase set log failed:", err));
-
-          // 2. Save flat log by log ID
-          const flatLogRef = ref(db, `student_attempts/${newLog.id}`);
-          set(flatLogRef, newLog).catch(err => console.warn("Firebase set flat log failed:", err));
-
-          // 3. Push to global real-time attempts list
-          const pushRef = push(ref(db, `attempts_pool`));
-          set(pushRef, newLog).catch(err => console.warn("Firebase push attempt failed:", err));
+          const adminLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
+          set(adminLogRef, { ...newLog, uid }).catch(err => console.warn("Firebase admin log failed:", err));
         }
       } catch (firebaseErr) {
         console.error("Failed to save student attempt log to Firebase:", firebaseErr);

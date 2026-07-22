@@ -37,80 +37,49 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   const isOutsidePracticeHours = currentHour < 9 || currentHour >= 23;
 
   useEffect(() => {
-    const studentReg = studentDetails?.registerNumber ? String(studentDetails.registerNumber).trim() : '';
-    const studentName = studentDetails?.name
-      ? String(studentDetails.name).trim()
-      : (authUser?.displayName || authUser?.email?.split('@')[0] || '');
-    const studentUid = authUser?.uid || '';
+    const uid = authUser?.uid;
+    if (!uid) {
+      setStudentLogs([]);
+      setLoadingLogs(false);
+      return;
+    }
 
     setLoadingLogs(true);
 
-    const isLogForCurrentStudent = (log) => {
-      if (!log) return false;
-      // 1. Always match by Firebase/stable UID first (most reliable)
-      if (studentUid && log.uid && log.uid === studentUid) return true;
-      // 2. Match by Register Number (when filled)
-      if (
-        studentReg &&
-        studentReg !== 'N/A' &&
-        log.registerNumber &&
-        String(log.registerNumber).trim() === studentReg
-      ) return true;
-      // 3. Match by exact Student Name as last resort (only if no uid stored)
-      if (
-        !log.uid &&
-        studentName &&
-        studentName.toLowerCase() !== 'student' &&
-        log.studentName &&
-        String(log.studentName).trim().toLowerCase() === studentName.toLowerCase()
-      ) return true;
-      return false;
-    };
-
-    const logsRef = ref(db, 'student_logs');
-    const unsubscribe = onValue(logsRef, (snapshot) => {
+    // Fetch ONLY this student's logs from their isolated Firebase path: user_logs/${uid}/
+    const userLogsRef = ref(db, `user_logs/${uid}`);
+    const unsubscribe = onValue(userLogsRef, (snapshot) => {
       const data = snapshot.val();
-      let allFetchedLogs = [];
-
-      if (data) {
-        const recurse = (node) => {
-          if (!node || typeof node !== 'object') return;
-          if (node.studentName || node.date) {
-            allFetchedLogs.push(node);
-            return;
-          }
-          Object.values(node).forEach(child => recurse(child));
-        };
-        recurse(data);
+      let firebaseLogs = [];
+      if (data && typeof data === 'object') {
+        firebaseLogs = Object.values(data).filter(Boolean);
       }
 
-      // Merge with localStorage logs
+      // Merge with localStorage backup (only for this user's session)
       const rawLocal = localStorage.getItem('gate_cbt_student_logs');
       if (rawLocal) {
         try {
           const localLogs = JSON.parse(rawLocal);
           localLogs.forEach(loc => {
-            if (!allFetchedLogs.some(f => f.id === loc.id || (f.date === loc.date && f.studentName === loc.studentName))) {
-              allFetchedLogs.push(loc);
+            if (loc && loc.uid === uid && !firebaseLogs.some(f => f.id === loc.id)) {
+              firebaseLogs.push(loc);
             }
           });
         } catch (e) {}
       }
 
-      // Strictly isolate logs for current student only
-      const finalLogs = allFetchedLogs.filter(isLogForCurrentStudent);
-      finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-      setStudentLogs(finalLogs);
+      firebaseLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+      setStudentLogs(firebaseLogs);
       setLoadingLogs(false);
     }, (error) => {
-      console.warn("Firebase student logs fetch failed, loading from local:", error);
+      console.warn("Firebase user_logs fetch failed, loading from localStorage:", error);
+      // Fallback: localStorage only for this uid
       const rawLocal = localStorage.getItem('gate_cbt_student_logs');
       let finalLogs = [];
       if (rawLocal) {
         try {
           const localLogs = JSON.parse(rawLocal);
-          finalLogs = localLogs.filter(isLogForCurrentStudent);
+          finalLogs = localLogs.filter(loc => loc && loc.uid === uid);
           finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
         } catch (e) {}
       }
@@ -119,7 +88,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
     });
 
     return () => unsubscribe();
-  }, [authUser, studentDetails]);
+  }, [authUser?.uid]);
 
   const topics = [
     { name: 'Full Syllabus', icon: '📝', desc: 'Random questions across all syllabus topics' },
