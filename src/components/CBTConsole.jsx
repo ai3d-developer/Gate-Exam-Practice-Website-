@@ -5,6 +5,9 @@ export default function CBTConsole({
   selectedTopic,
   numQuestions,
   timeLimit,
+  testType = 'TODAY',
+  targetDate,
+  studentYear = '3rd Year',
   questionsList,
   answersDb,
   onFinish
@@ -32,15 +35,23 @@ export default function CBTConsole({
       return adjusted.toISOString().split('T')[0];
     })();
 
-    // 1. Check if custom questions exist specifically allotted for today's target date
-    const todayTargetQuestions = questionsList.filter(q => {
-      if (q.target_date) return q.target_date === todayDateStr;
-      return false; // exclude past/future dated questions from today's test
+    const effectiveTargetDate = targetDate || todayDateStr;
+
+    // 1. Check if custom questions exist specifically allotted for the target date and student year
+    const targetQuestions = questionsList.filter(q => {
+      if (q.target_date && q.target_date !== effectiveTargetDate) return false;
+      if (q.target_date === effectiveTargetDate) {
+        if (!q.target_years || !Array.isArray(q.target_years) || q.target_years.length === 0) {
+          return true; // All years
+        }
+        return q.target_years.includes(studentYear);
+      }
+      return false;
     });
 
     let selected = [];
-    if (todayTargetQuestions.length > 0) {
-      selected = [...todayTargetQuestions].sort((a, b) => (a.original_num || 0) - (b.original_num || 0));
+    if (targetQuestions.length > 0) {
+      selected = [...targetQuestions].sort((a, b) => (a.original_num || 0) - (b.original_num || 0));
     } else {
       // Fallback: Filter by selected topic
       let filtered = [];
@@ -86,7 +97,7 @@ export default function CBTConsole({
       initialStatuses[q.id] = idx === 0 ? 'not-answered' : 'not-visited';
     });
     setQuestionStatuses(initialStatuses);
-  }, [selectedTopic, numQuestions, questionsList]);
+  }, [selectedTopic, numQuestions, targetDate, questionsList]);
 
   // Countdown timer
   useEffect(() => {
@@ -552,7 +563,7 @@ export default function CBTConsole({
       <div className="cbt-header">
         <div className="cbt-header-title">
           <span style={{ background: '#eea236', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 800 }}>EE</span>
-          <span>GATE Exam Practice Portal — {selectedTopic}</span>
+          <span>GATE Practice Portal — {testType === 'YESTERDAY' ? "Yesterday's Test" : "Today's Test"} {targetDate ? `(${targetDate})` : ''} — {selectedTopic}</span>
         </div>
         <div className="cbt-header-controls">
           <button className="cbt-btn-calc" onClick={() => setShowCalc(!showCalc)}>Scientific Calculator</button>

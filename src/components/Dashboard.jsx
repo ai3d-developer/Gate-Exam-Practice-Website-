@@ -250,14 +250,59 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
     }
   });
 
-  // Default exam config if no admin config set
   const effectiveConfig = adminConfig || { selectedTopic: 'Full Syllabus', numQuestions: 20, timeLimit: 30 };
 
-  // Check if student already attended this exam TODAY
-  const studentName = authUser?.displayName || authUser?.email || 'Student';
-  const activeTopic = effectiveConfig.selectedTopic;
-  const hasAttended = studentLogs.some(log => {
-    if (log.topic !== activeTopic) return false;
+  const todayDateStr = (() => {
+    const local = new Date();
+    const offset = local.getTimezoneOffset();
+    const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+    return adjusted.toISOString().split('T')[0];
+  })();
+
+  const yesterdayDateStr = (() => {
+    const local = new Date();
+    local.setDate(local.getDate() - 1);
+    const offset = local.getTimezoneOffset();
+    const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+    return adjusted.toISOString().split('T')[0];
+  })();
+
+  const studentYear = studentDetails?.year || '3rd Year';
+
+  const isQuestionMatchingYear = (q, yr) => {
+    if (!q.target_years || !Array.isArray(q.target_years) || q.target_years.length === 0) {
+      return yr === '3rd Year' || yr === '4th Year';
+    }
+    if (yr === '2nd Year' && q.target_years.length >= 3) {
+      const hasSpecific2ndYearQ = questionsList.some(item => Array.isArray(item.target_years) && item.target_years.length === 1 && item.target_years[0] === '2nd Year' && item.target_date === q.target_date);
+      if (hasSpecific2ndYearQ) return false;
+    }
+    return q.target_years.includes(yr);
+  };
+
+  // Custom questions for Today and Yesterday filtered for student's academic year
+  const todayQuestions = questionsList.filter(q => q.target_date === todayDateStr && isQuestionMatchingYear(q, studentYear));
+  const yesterdayQuestions = questionsList.filter(q => q.target_date === yesterdayDateStr && isQuestionMatchingYear(q, studentYear));
+
+  const todayTopic = todayQuestions.length > 0 ? (todayQuestions[0].section || effectiveConfig.selectedTopic) : effectiveConfig.selectedTopic;
+  const todayCount = todayQuestions.length > 0 ? todayQuestions.length : effectiveConfig.numQuestions;
+
+  const yesterdayTopic = yesterdayQuestions.length > 0 ? (yesterdayQuestions[0].section || effectiveConfig.selectedTopic) : effectiveConfig.selectedTopic;
+  const yesterdayCount = yesterdayQuestions.length > 0 ? yesterdayQuestions.length : effectiveConfig.numQuestions;
+
+  const [activeModalTest, setActiveModalTest] = useState({
+    testType: 'TODAY',
+    targetDate: todayDateStr,
+    topic: todayTopic,
+    count: todayCount,
+    time: effectiveConfig.timeLimit
+  });
+  const [selectedAnswersLog, setSelectedAnswersLog] = useState(null);
+
+  // Attendance checks
+  const hasAttendedToday = studentLogs.some(log => {
+    if (!log) return false;
+    if (log.testDate) return log.testDate === todayDateStr;
     try {
       const logDate = new Date(log.date).toDateString();
       const todayDate = new Date().toDateString();
@@ -265,6 +310,21 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
     } catch (e) {
       return false;
     }
+  });
+
+  const hasAttendedYesterday = studentLogs.some(log => {
+    if (!log) return false;
+    if (log.testDate) return log.testDate === yesterdayDateStr;
+    if (log.testType === 'YESTERDAY') {
+      try {
+        const logDate = new Date(log.date).toDateString();
+        const todayDate = new Date().toDateString();
+        return logDate === todayDate;
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
   });
 
   const formatDate = (isoString) => {
@@ -377,78 +437,185 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
         </div>
       </div>
 
-      {/* Daily Test Panel */}
-      <div className="panel-card" style={{
-        background: adminConfig ? 'linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)' : '#ffffff',
-        border: adminConfig ? '2px solid #3b82f6' : '1px solid #e2e8f0',
-        borderRadius: '24px',
-        padding: '2rem',
-        marginBottom: '2.5rem',
-        boxShadow: adminConfig ? '0 8px 30px rgba(59,130,246,0.1)' : 'none',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '1.5rem'
-      }}>
-        <div style={{ flex: 1, minWidth: '260px' }}>
-          <span style={{
-            background: adminConfig ? '#3b82f6' : '#94a3b8',
-            color: 'white',
-            fontSize: '0.72rem',
-            fontWeight: 800,
-            padding: '0.25rem 0.75rem',
-            borderRadius: '20px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em'
-          }}>
-            {adminConfig ? '📌 Admin Assigned Test' : '📝 Default Practice'}
-          </span>
-          <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '1.6rem', fontWeight: 800, color: '#0f172a', marginTop: '0.75rem', marginBottom: '0.4rem' }}>
-            {effectiveConfig.selectedTopic}
-          </h2>
-          <div style={{ display: 'flex', gap: '1.5rem', color: '#475569', fontSize: '0.9rem', fontWeight: 500 }}>
-            <span>📋 <strong>{effectiveConfig.numQuestions}</strong> Questions</span>
-            <span>⏱️ <strong>{effectiveConfig.timeLimit}</strong> Minutes</span>
+      {/* Daily Test Panels (Today Test vs Yesterday Test) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+        {/* Card 1: Today's Test */}
+        <div className="panel-card" style={{
+          background: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)',
+          border: '2px solid #3b82f6',
+          borderRadius: '24px',
+          padding: '1.75rem',
+          boxShadow: '0 8px 30px rgba(59,130,246,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          gap: '1.25rem'
+        }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <span style={{
+                background: '#3b82f6',
+                color: 'white',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                padding: '0.25rem 0.75rem',
+                borderRadius: '20px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em'
+              }}>
+                📅 Today Test ({todayDateStr})
+              </span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#2563eb' }}>
+                {todayQuestions.length > 0 ? 'Assigned' : 'Default'}
+              </span>
+            </div>
+
+            <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
+              {todayTopic}
+            </h2>
+
+            <div style={{ display: 'flex', gap: '1.25rem', color: '#475569', fontSize: '0.88rem', fontWeight: 500, marginBottom: '0.75rem' }}>
+              <span>📋 <strong>{todayCount}</strong> Questions</span>
+              <span>⏱️ <strong>{effectiveConfig.timeLimit}</strong> Minutes</span>
+            </div>
+
+            {hasAttendedToday && (
+              <p style={{ fontSize: '0.825rem', color: '#ef4444', fontWeight: 600, margin: '0.25rem 0' }}>
+                ⚠️ You have already completed Today's Test.
+              </p>
+            )}
+            {isOutsidePracticeHours && !hasAttendedToday && (
+              <p style={{ fontSize: '0.825rem', color: '#f59e0b', fontWeight: 600, margin: '0.25rem 0' }}>
+                🕒 Daily practice is open from 9:00 AM to 11:00 PM.
+              </p>
+            )}
+            {todayQuestions.length === 0 && !hasAttendedToday && !isOutsidePracticeHours && (
+              <p style={{ fontSize: '0.825rem', color: '#94a3b8', fontWeight: 500, margin: '0.25rem 0' }}>
+                Questions not assigned for today test yet.
+              </p>
+            )}
           </div>
-          {!adminConfig && (
-            <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
-              No exam assigned by admin yet. Using default settings.
-            </p>
-          )}
-          {hasAttended && (
-            <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#ef4444', fontWeight: 600 }}>
-              ⚠️ You have already completed this test (1 attempt limit).
-            </p>
-          )}
-          {isOutsidePracticeHours && !hasAttended && (
-            <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#f59e0b', fontWeight: 600 }}>
-              🕒 Daily practice exam is closed. Active practice hours are 9:00 AM to 11:00 PM. Next date exam questions will open at 12:00 AM midnight.
-            </p>
-          )}
+
+          <button
+            id="start-today-exam-btn"
+            disabled={hasAttendedToday || isOutsidePracticeHours || todayQuestions.length === 0}
+            onClick={() => {
+              setActiveModalTest({
+                testType: 'TODAY',
+                targetDate: todayDateStr,
+                topic: todayTopic,
+                count: todayCount,
+                time: effectiveConfig.timeLimit
+              });
+              setShowDetailsModal(true);
+            }}
+            style={{
+              width: '100%',
+              background: (hasAttendedToday || isOutsidePracticeHours || todayQuestions.length === 0) ? '#cbd5e1' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              color: (hasAttendedToday || isOutsidePracticeHours || todayQuestions.length === 0) ? '#64748b' : 'white',
+              border: 'none',
+              borderRadius: '14px',
+              padding: '0.85rem 1.5rem',
+              fontWeight: 700,
+              fontSize: '1rem',
+              cursor: (hasAttendedToday || isOutsidePracticeHours || todayQuestions.length === 0) ? 'not-allowed' : 'pointer',
+              boxShadow: (hasAttendedToday || isOutsidePracticeHours || todayQuestions.length === 0) ? 'none' : '0 4px 15px rgba(59,130,246,0.3)',
+              transition: 'all 0.2s',
+              textAlign: 'center'
+            }}
+          >
+            {hasAttendedToday ? '🔒 Already Attended' : isOutsidePracticeHours ? '🕒 Exam Closed' : todayQuestions.length === 0 ? '⚠️ Questions Not Assigned' : '🚀 Start Today Test'}
+          </button>
         </div>
-        <button
-          id="start-exam-btn"
-          disabled={hasAttended || isOutsidePracticeHours}
-          onClick={() => setShowDetailsModal(true)}
-          style={{
-            background: (hasAttended || isOutsidePracticeHours) ? '#cbd5e1' : 'linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)',
-            color: (hasAttended || isOutsidePracticeHours) ? '#64748b' : 'white',
-            border: 'none',
-            borderRadius: '14px',
-            padding: '1rem 2.25rem',
-            fontWeight: 700,
-            fontSize: '1.05rem',
-            cursor: (hasAttended || isOutsidePracticeHours) ? 'not-allowed' : 'pointer',
-            boxShadow: (hasAttended || isOutsidePracticeHours) ? 'none' : '0 4px 20px rgba(59,130,246,0.35)',
-            transition: 'transform 0.2s, box-shadow 0.2s',
-            whiteSpace: 'nowrap'
-          }}
-          onMouseOver={(e) => { if (!hasAttended && !isOutsidePracticeHours) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 25px rgba(59,130,246,0.45)'; } }}
-          onMouseOut={(e) => { if (!hasAttended && !isOutsidePracticeHours) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(59,130,246,0.35)'; } }}
-        >
-          {hasAttended ? '🔒 Already Attended' : isOutsidePracticeHours ? '🕒 Exam Closed' : '🚀 Start Daily Practice'}
-        </button>
+
+        {/* Card 2: Yesterday's Test */}
+        <div className="panel-card" style={{
+          background: 'linear-gradient(135deg, #ffffff 0%, #fef3c7 100%)',
+          border: '2px solid #f59e0b',
+          borderRadius: '24px',
+          padding: '1.75rem',
+          boxShadow: '0 8px 30px rgba(245,158,11,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          justify: 'space-between',
+          gap: '1.25rem'
+        }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <span style={{
+                background: '#f59e0b',
+                color: 'white',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                padding: '0.25rem 0.75rem',
+                borderRadius: '20px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em'
+              }}>
+                ⏪ Yesterday Test ({yesterdayDateStr})
+              </span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#d97706' }}>
+                {yesterdayQuestions.length > 0 ? 'Assigned' : 'Not Assigned'}
+              </span>
+            </div>
+
+            <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
+              {yesterdayTopic}
+            </h2>
+
+            <div style={{ display: 'flex', gap: '1.25rem', color: '#475569', fontSize: '0.88rem', fontWeight: 500, marginBottom: '0.75rem' }}>
+              <span>📋 <strong>{yesterdayCount}</strong> Questions</span>
+              <span>⏱️ <strong>{effectiveConfig.timeLimit}</strong> Minutes</span>
+            </div>
+
+            {hasAttendedYesterday && (
+              <p style={{ fontSize: '0.825rem', color: '#ef4444', fontWeight: 600, margin: '0.25rem 0' }}>
+                ⚠️ You have already completed Yesterday's Test.
+              </p>
+            )}
+            {isOutsidePracticeHours && !hasAttendedYesterday && (
+              <p style={{ fontSize: '0.825rem', color: '#f59e0b', fontWeight: 600, margin: '0.25rem 0' }}>
+                🕒 Daily practice is open from 9:00 AM to 11:00 PM.
+              </p>
+            )}
+            {yesterdayQuestions.length === 0 && !hasAttendedYesterday && !isOutsidePracticeHours && (
+              <p style={{ fontSize: '0.825rem', color: '#94a3b8', fontWeight: 500, margin: '0.25rem 0' }}>
+                Questions not assigned for yesterday test.
+              </p>
+            )}
+          </div>
+
+          <button
+            id="start-yesterday-exam-btn"
+            disabled={hasAttendedYesterday || isOutsidePracticeHours || yesterdayQuestions.length === 0}
+            onClick={() => {
+              setActiveModalTest({
+                testType: 'YESTERDAY',
+                targetDate: yesterdayDateStr,
+                topic: yesterdayTopic,
+                count: yesterdayCount,
+                time: effectiveConfig.timeLimit
+              });
+              setShowDetailsModal(true);
+            }}
+            style={{
+              width: '100%',
+              background: (hasAttendedYesterday || isOutsidePracticeHours || yesterdayQuestions.length === 0) ? '#cbd5e1' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              color: (hasAttendedYesterday || isOutsidePracticeHours || yesterdayQuestions.length === 0) ? '#64748b' : 'white',
+              border: 'none',
+              borderRadius: '14px',
+              padding: '0.85rem 1.5rem',
+              fontWeight: 700,
+              fontSize: '1rem',
+              cursor: (hasAttendedYesterday || isOutsidePracticeHours || yesterdayQuestions.length === 0) ? 'not-allowed' : 'pointer',
+              boxShadow: (hasAttendedYesterday || isOutsidePracticeHours || yesterdayQuestions.length === 0) ? 'none' : '0 4px 15px rgba(245,158,11,0.3)',
+              transition: 'all 0.2s',
+              textAlign: 'center'
+            }}
+          >
+            {hasAttendedYesterday ? '🔒 Already Attended' : isOutsidePracticeHours ? '🕒 Exam Closed' : yesterdayQuestions.length === 0 ? '⚠️ Questions Not Assigned' : '🚀 Start Yesterday Test'}
+          </button>
+        </div>
       </div>
 
       {/* Bloom's Cognitive Level Analytics Bar Chart Card */}
@@ -680,6 +847,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
                   <th style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Accuracy</th>
                   <th style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status (Qns)</th>
                   <th style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time Spent</th>
+                  <th style={{ padding: '0.75rem 1rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Answer Key</th>
                 </tr>
               </thead>
               <tbody>
@@ -689,6 +857,11 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
                   const accBadgeColor = isHighAcc ? '#d1fae5' : isMedAcc ? '#fef3c7' : '#fee2e2';
                   const accTextColor = isHighAcc ? '#065f46' : isMedAcc ? '#92400e' : '#991b1b';
                   
+                  const submitTime = log.date ? new Date(log.date).getTime() : Date.now();
+                  const elapsedMs = Date.now() - submitTime;
+                  const isUnlocked = elapsedMs >= 3600000; // 1 hour (3,600,000 ms)
+                  const remainingMins = Math.max(1, Math.ceil((3600000 - elapsedMs) / 60000));
+
                   return (
                     <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background-color 0.15s' }}
                         onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
@@ -735,6 +908,20 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
                       </td>
                       <td style={{ padding: '1rem', color: '#64748b', fontSize: '0.85rem' }}>
                         ⏱️ {formatTimeSpent(log.timeSpent)}
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        {!isUnlocked ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', color: '#d97706', background: '#fef3c7', padding: '0.35rem 0.75rem', borderRadius: '8px', fontWeight: 600, border: '1px solid #fde68a' }}>
+                            🔒 Locked ({remainingMins}m left)
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setSelectedAnswersLog(log)}
+                            style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '8px', padding: '0.4rem 0.9rem', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', boxShadow: '0 2px 8px rgba(16,185,129,0.25)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                          >
+                            👁️ Show Answer
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -804,7 +991,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
             <form onSubmit={(e) => {
               e.preventDefault();
               setShowDetailsModal(false);
-              onStartTest(effectiveConfig.selectedTopic, effectiveConfig.numQuestions, effectiveConfig.timeLimit, detailsForm);
+              onStartTest(activeModalTest.topic, activeModalTest.count, activeModalTest.time, detailsForm, activeModalTest.testType, activeModalTest.targetDate);
             }}>
               {/* Year of Study Selection */}
               <div style={{ marginBottom: '1.25rem' }}>
@@ -832,6 +1019,7 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
                     boxSizing: 'border-box'
                   }}
                 >
+                  <option value="2nd Year">2nd Year</option>
                   <option value="3rd Year">3rd Year</option>
                   <option value="4th Year">4th Year (Final Year)</option>
                 </select>
@@ -1007,6 +1195,180 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Show Answer Key Modal */}
+      {selectedAnswersLog && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'center',
+          zIndex: 9999,
+          padding: '1.5rem'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '24px',
+            maxWidth: '800px',
+            width: '100%',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }}>
+            <div style={{ padding: '1.5rem 2rem', background: '#0f172a', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '1.3rem', fontWeight: 800 }}>
+                  👁️ Answer Key & Solution Review
+                </h2>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                  {selectedAnswersLog.topic} • Attended on {formatDate(selectedAnswersLog.date)} • Score: {selectedAnswersLog.score} Marks
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedAnswersLog(null)}
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', fontSize: '1.4rem', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ padding: '1.5rem 2rem', overflowY: 'auto', flex: 1 }}>
+              {(() => {
+                const logReview = selectedAnswersLog.reviewDetails || [];
+                const logTargetDate = selectedAnswersLog.testDate || (selectedAnswersLog.date ? new Date(selectedAnswersLog.date).toISOString().split('T')[0] : '');
+                
+                let displayQuestions = [];
+                if (logReview.length > 0) {
+                  displayQuestions = logReview;
+                } else {
+                  displayQuestions = questionsList.filter(q => {
+                    if (q.target_date && logTargetDate) return q.target_date === logTargetDate;
+                    return q.section === selectedAnswersLog.topic;
+                  });
+                }
+
+                if (displayQuestions.length === 0) {
+                  return (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                      Questions for this test attempt are no longer available in memory.
+                    </div>
+                  );
+                }
+
+                return displayQuestions.map((q, idx) => {
+                  const studentAns = q.userAnswer || '';
+                  const correctAns = q.correct_answer || q.correctAnswer || '';
+                  const isCorrect = q.isCorrect === 'correct' || (studentAns && studentAns === correctAns);
+                  const isUnattempted = !studentAns || q.isCorrect === 'unattempted';
+
+                  return (
+                    <div key={q.id || idx} style={{ marginBottom: '1.5rem', padding: '1.25rem', background: '#f8fafc', borderRadius: '14px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontWeight: 800, color: '#2563eb', fontSize: '0.95rem' }}>
+                          Question #{idx + 1} ({q.section || 'General'})
+                        </span>
+                        <span style={{
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.6rem',
+                          borderRadius: '6px',
+                          background: isCorrect ? '#dcfce7' : isUnattempted ? '#f1f5f9' : '#fee2e2',
+                          color: isCorrect ? '#15803d' : isUnattempted ? '#64748b' : '#b91c1c'
+                        }}>
+                          {isCorrect ? '✓ Correct' : isUnattempted ? '⚪ Unattempted' : '✗ Incorrect'}
+                        </span>
+                      </div>
+
+                      {q.question_text && (
+                        <div style={{ fontSize: '0.925rem', color: '#0f172a', lineHeight: 1.5, marginBottom: '0.75rem', fontWeight: 500, whiteSpace: 'pre-wrap' }}>
+                          {q.question_text}
+                        </div>
+                      )}
+
+                      {q.question_image && (
+                        <div style={{ marginBottom: '0.75rem' }}>
+                          <img src={q.question_image} alt={`Q${idx + 1}`} style={{ maxHeight: '200px', maxWidth: '100%', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                        </div>
+                      )}
+
+                      {/* Options list if MCQ */}
+                      {q.custom_options && q.custom_options.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                          {['A', 'B', 'C', 'D'].map((optKey, oIdx) => {
+                            const optVal = q.custom_options[oIdx];
+                            const isCorrectOpt = correctAns === optKey;
+                            const isUserChoice = studentAns === optKey;
+
+                            let bg = '#ffffff';
+                            let border = '1px solid #cbd5e1';
+                            let textColor = '#334155';
+
+                            if (isCorrectOpt) {
+                              bg = '#dcfce7';
+                              border = '2px solid #10b981';
+                              textColor = '#15803d';
+                            } else if (isUserChoice && !isCorrectOpt) {
+                              bg = '#fee2e2';
+                              border = '2px solid #ef4444';
+                              textColor = '#991b1b';
+                            }
+
+                            return (
+                              <div key={optKey} style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: bg, border: border, fontSize: '0.85rem', fontWeight: (isCorrectOpt || isUserChoice) ? 700 : 500, color: textColor }}>
+                                <strong>({optKey})</strong> {optVal && optVal.startsWith('data:image') ? <img src={optVal} alt={optKey} style={{ maxHeight: '40px', verticalAlign: 'middle' }} /> : optVal}
+                                {isUserChoice && <span style={{ marginLeft: '0.4rem', color: isCorrectOpt ? '#15803d' : '#991b1b', fontWeight: 800 }}>(✏️ Your Answer)</span>}
+                                {isCorrectOpt && !isUserChoice && <span style={{ marginLeft: '0.4rem', color: '#15803d', fontWeight: 800 }}>(✓ Correct Key)</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Answers comparison row */}
+                      <div style={{ display: 'flex', gap: '1.25rem', background: '#eff6ff', padding: '0.6rem 1rem', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 600, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div>
+                          Your Attended Answer:{' '}
+                          <strong style={{
+                            color: isCorrect ? '#16a34a' : isUnattempted ? '#64748b' : '#dc2626',
+                            background: isCorrect ? '#dcfce7' : isUnattempted ? '#f1f5f9' : '#fee2e2',
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '6px'
+                          }}>
+                            {studentAns ? studentAns : 'Not Attempted'}
+                          </strong>
+                        </div>
+                        <div>
+                          Correct Key:{' '}
+                          <strong style={{ color: '#16a34a', background: '#dcfce7', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                            {correctAns ? correctAns : 'N/A'}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            <div style={{ padding: '1rem 2rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setSelectedAnswersLog(null)}
+                style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', padding: '0.6rem 1.5rem', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Close Review
+              </button>
+            </div>
           </div>
         </div>
       )}

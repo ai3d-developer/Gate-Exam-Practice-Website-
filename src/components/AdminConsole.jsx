@@ -86,6 +86,19 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
     return adjusted.toISOString().split('T')[0];
   });
+  const [targetYears, setTargetYears] = useState(['2nd Year', '3rd Year', '4th Year']);
+
+  const handleYearToggle = (yr) => {
+    setTargetYears(prev => {
+      if (prev.includes(yr)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(y => y !== yr);
+      } else {
+        return [...prev, yr];
+      }
+    });
+  };
+
   const [bankSubjectFilter, setBankSubjectFilter] = useState('All');
   const [bankSearchQuery, setBankSearchQuery] = useState('');
   const [uploadQuestionNumber, setUploadQuestionNumber] = useState(1);
@@ -98,14 +111,29 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     return adjusted.toISOString().split('T')[0];
   })();
 
+  const isQuestionMatchingYears = (q, selectedYears) => {
+    // If no target_years array, it is a legacy question created for 3rd/4th Year
+    if (!q.target_years || !Array.isArray(q.target_years) || q.target_years.length === 0) {
+      return selectedYears.includes('3rd Year') || selectedYears.includes('4th Year');
+    }
+    // If q.target_years includes all 3 years (legacy default from earlier today)
+    // and selectedYears is ONLY ['2nd Year'], treat old default questions as 3rd/4th Year questions
+    if (q.target_years.length >= 3 && selectedYears.length === 1 && selectedYears.includes('2nd Year')) {
+      return false;
+    }
+    return q.target_years.some(y => selectedYears.includes(y));
+  };
+
   const customQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_'));
   const rawAllotted = customQuestions.filter(q => {
     if (targetDate < todayDateStr) {
       // Past exam dates are completed & locked; hide questions from Edit Questions tab as requested
       return false;
     }
-    if (q.target_date) return q.target_date === targetDate;
-    return targetDate === todayDateStr;
+    const isDateMatch = q.target_date ? (q.target_date === targetDate) : (targetDate === todayDateStr);
+    if (!isDateMatch) return false;
+
+    return isQuestionMatchingYears(q, targetYears);
   });
 
   // Separate Image Questions (1..10) vs Manual Text Questions (11..20)
@@ -144,7 +172,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       setPreviewIndex(-1);
       setUploadQuestionNumber(rawAllotted.length + 1);
     }
-  }, [targetDate, questionsList]);
+  }, [targetDate, targetYears, questionsList]);
 
   const loadQuestionForPreview = (target) => {
     if (target === -1) {
@@ -396,7 +424,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         ? [optA, optB, optC, optD]
         : [],
       negative_marks: parseFloat(uploadForm.negative_marks) || 0,
-      target_date: targetDate
+      target_date: targetDate,
+      target_years: targetYears
     };
 
     // 1. Save locally first (fallback storage)
@@ -622,14 +651,24 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
               Configure the exam date, question count, and time limit. Students will see this as their assigned daily practice exam.
             </p>
 
-            {/* Warning if questions already allotted for selected target date */}
-            {allottedQuestionsForDate.length > 0 && (
+            {/* Status notice if questions already allotted for selected target date & selected target years */}
+            {allottedQuestionsForDate.length > 0 ? (
               <div style={{ padding: '1rem 1.25rem', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '12px', color: '#d48806', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <span style={{ fontSize: '1.4rem' }}>⚠️</span>
                 <div>
-                  <div style={{ fontSize: '0.95rem', color: '#b7eb8f' ? '#873800' : '#d48806' }}>Already Questions Allotted for this Date ({targetDate})</div>
+                  <div style={{ fontSize: '0.95rem', color: '#873800' }}>Already Questions Allotted for {targetYears.join(', ')} on {targetDate}</div>
                   <div style={{ fontSize: '0.825rem', fontWeight: 500, color: '#ad4e00', marginTop: '0.2rem' }}>
-                    {allottedQuestionsForDate.length} question(s) are currently configured for {targetDate}.
+                    {allottedQuestionsForDate.length} question(s) are currently configured for {targetYears.join(', ')}.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '1rem 1.25rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '12px', color: '#15803d', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.4rem' }}>✨</span>
+                <div>
+                  <div style={{ fontSize: '0.95rem', color: '#166534' }}>0 Questions Allotted for {targetYears.join(', ')} on {targetDate}</div>
+                  <div style={{ fontSize: '0.825rem', fontWeight: 500, color: '#15803d', marginTop: '0.2rem' }}>
+                    Upload questions list is empty for {targetYears.join(', ')}. Click <strong>Save Configuration</strong> to start uploading questions for this year!
                   </div>
                 </div>
               </div>
@@ -669,6 +708,25 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   <select value={examConfig.timeLimit} onChange={e => setExamConfig(p => ({ ...p, timeLimit: parseInt(e.target.value) }))} style={inputStyle}>
                     {[5, 10, 15, 20, 30, 45, 60, 90, 180].map(m => <option key={m} value={m}>{m} Minutes</option>)}
                   </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem', background: '#f8fafc', padding: '1rem 1.25rem', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                  <label style={{ ...labelStyle, fontSize: '0.88rem', color: '#0f172a' }}>🎓 Target Academic Year(s) Allotment</label>
+                  <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                    {['2nd Year', '3rd Year', '4th Year'].map(yr => (
+                      <label key={yr} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, color: targetYears.includes(yr) ? '#1d4ed8' : '#475569', background: targetYears.includes(yr) ? '#dbeafe' : '#ffffff', padding: '0.5rem 1rem', borderRadius: '8px', border: targetYears.includes(yr) ? '2px solid #3b82f6' : '1px solid #cbd5e1', transition: 'all 0.15s' }}>
+                        <input
+                          type="checkbox"
+                          checked={targetYears.includes(yr)}
+                          onChange={() => handleYearToggle(yr)}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                        <span>{yr}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '0.5rem', margin: '0.4rem 0 0' }}>
+                    Select which academic year students can see and take this test. Uncheck a year if questions are not meant for them.
+                  </p>
                 </div>
               </div>
               <button type="submit" style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.875rem 2rem', fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem', boxShadow: '0 4px 12px rgba(99,102,241,0.25)' }}>

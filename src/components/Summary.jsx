@@ -7,6 +7,26 @@ export default function Summary({ result, onBackToDashboard }) {
   const canvasRef = useRef(null);
   const renderTaskRef = useRef(null);
 
+  // 1-Hour Answer Key Lock State
+  const [submitTime] = useState(() => Date.now());
+  const [timeLeftSecs, setTimeLeftSecs] = useState(3600); // 1 hour = 3600 seconds
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - submitTime) / 1000);
+      const remaining = 3600 - elapsed;
+      if (remaining <= 0) {
+        setTimeLeftSecs(0);
+        clearInterval(interval);
+      } else {
+        setTimeLeftSecs(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [submitTime]);
+
+  const isUnlocked = timeLeftSecs <= 0;
+
   // Compute metrics
   const totalQuestions = result.totalQuestions;
   const attemptedCount = result.correctCount + result.incorrectCount;
@@ -284,53 +304,72 @@ export default function Summary({ result, onBackToDashboard }) {
 
         {/* Right pane: Review list */}
         <div className="review-list-card">
-          <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
-            Question-by-Question Review
+          <h2 style={{ fontFamily: 'var(--font-title)', fontSize: '1.25rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Question-by-Question Review</span>
+            <span style={{ fontSize: '0.8rem', color: isUnlocked ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+              {isUnlocked ? '🔓 Answers Unlocked' : '🔒 Answers Locked (1 Hour Rule)'}
+            </span>
           </h2>
           
-          {result.reviewDetails.map((q, idx) => {
-            const isUnattempted = q.isCorrect === 'unattempted';
-            const isCorrect = q.isCorrect === 'correct';
-            
-            return (
-              <div key={q.id} className="review-question-item">
-                <div className="review-q-header">
-                  <div className="review-q-title">
-                    <span style={{ color: '#60a5fa' }}>Q{idx + 1}.</span>
-                    <span>{q.section}</span>
-                    <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>({q.marks} Mark)</span>
-                  </div>
-                  <span className={`badge ${q.isCorrect}`}>
-                    {isUnattempted ? 'Unattempted' : isCorrect ? 'Correct' : 'Incorrect'}
-                  </span>
-                </div>
-
-                {q.question_text && (
-                  <div style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: '0.5rem' }}>
-                    {q.question_text.replace(/Session - \d+/gi, '').trim()}
-                  </div>
-                )}
-                {q.question_image && (
-                  <div style={{ marginBottom: '0.5rem' }}>
-                    <img src={q.question_image} alt={`Q${idx + 1}`} style={{ maxHeight: '180px', maxWidth: '100%', borderRadius: '6px', border: '1px solid #e2e8f0' }} />
-                  </div>
-                )}
-
-                <div className="review-answers-row">
-                  <div>
-                    Your Answer:{' '}
-                    <span className={`review-ans-span ${isCorrect ? 'user-correct' : 'user-incorrect'}`}>
-                      {q.userAnswer ? q.userAnswer : 'None'}
+          {!isUnlocked ? (
+            <div style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%)', border: '2px dashed #3b82f6', borderRadius: '16px', padding: '2.5rem 1.5rem', textAlign: 'center', margin: '1rem 0' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🔒</div>
+              <h3 style={{ color: '#1e3a8a', fontSize: '1.25rem', fontWeight: 800, marginBottom: '0.4rem' }}>Answer Key & Explanations Locked</h3>
+              <p style={{ color: '#0369a1', fontSize: '0.9rem', maxWidth: '480px', margin: '0 auto 1.25rem', lineHeight: 1.5 }}>
+                Your exam score and performance statistics are recorded above. As per daily test guidelines, the detailed correct answer keys and solutions will automatically unlock <strong>1 hour</strong> after submission.
+              </p>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: 'white', fontWeight: 800, padding: '0.75rem 1.75rem', borderRadius: '30px', fontSize: '1.1rem', boxShadow: '0 4px 15px rgba(59,130,246,0.35)' }}>
+                ⏱️ Unlocks in: {Math.floor(timeLeftSecs / 60)}m {timeLeftSecs % 60}s
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1.25rem' }}>
+                You can return to your dashboard. After 1 hour, click the <strong>"👁️ Show Answer"</strong> button in your practice history to view the full answer keys!
+              </p>
+            </div>
+          ) : (
+            result.reviewDetails.map((q, idx) => {
+              const isUnattempted = q.isCorrect === 'unattempted';
+              const isCorrect = q.isCorrect === 'correct';
+              
+              return (
+                <div key={q.id} className="review-question-item">
+                  <div className="review-q-header">
+                    <div className="review-q-title">
+                      <span style={{ color: '#60a5fa' }}>Q{idx + 1}.</span>
+                      <span>{q.section}</span>
+                      <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>({q.marks} Mark)</span>
+                    </div>
+                    <span className={`badge ${q.isCorrect}`}>
+                      {isUnattempted ? 'Unattempted' : isCorrect ? 'Correct' : 'Incorrect'}
                     </span>
                   </div>
-                  <div>
-                    Correct Key:{' '}
-                    <span className="review-ans-span correct-val">{q.correctAnswer}</span>
+
+                  {q.question_text && (
+                    <div style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: '0.5rem' }}>
+                      {q.question_text.replace(/Session - \d+/gi, '').trim()}
+                    </div>
+                  )}
+                  {q.question_image && (
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <img src={q.question_image} alt={`Q${idx + 1}`} style={{ maxHeight: '180px', maxWidth: '100%', borderRadius: '6px', border: '1px solid #e2e8f0' }} />
+                    </div>
+                  )}
+
+                  <div className="review-answers-row">
+                    <div>
+                      Your Answer:{' '}
+                      <span className={`review-ans-span ${isCorrect ? 'user-correct' : 'user-incorrect'}`}>
+                        {q.userAnswer ? q.userAnswer : 'None'}
+                      </span>
+                    </div>
+                    <div>
+                      Correct Key:{' '}
+                      <span className="review-ans-span correct-val">{q.correctAnswer}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

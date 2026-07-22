@@ -8,29 +8,17 @@ import CBTConsole from './components/CBTConsole';
 import Summary from './components/Summary';
 import AdminConsole from './components/AdminConsole';
 
-// Custom questions auto-clean is disabled to keep all past questions date-wise
-/*
-const isQuestionExpired = (id) => {
-  if (!id || !id.startsWith('custom_')) return false;
-  const tsStr = id.split('_')[1];
-  const ts = parseInt(tsStr, 10);
-  if (isNaN(ts)) return false;
-
-  const uploadDate = new Date(ts);
-  
-  // Calculate the expiration date/time for this upload (8:00 PM of upload day)
-  const expiryDate = new Date(uploadDate);
-  expiryDate.setHours(20, 0, 0, 0);
-  
-  if (uploadDate >= expiryDate) {
-    // If uploaded after 8:00 PM, it expires at 8:00 PM the next day
-    expiryDate.setDate(expiryDate.getDate() + 1);
-  }
-  
-  const now = new Date();
-  return now >= expiryDate;
+const getLocalDateStr = (d = new Date()) => {
+  const offset = d.getTimezoneOffset();
+  const adjusted = new Date(d.getTime() - (offset * 60 * 1000));
+  return adjusted.toISOString().split('T')[0];
 };
-*/
+
+const getYesterdayDateStr = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateStr(d);
+};
 
 export default function App() {
   const [authUser, setAuthUser] = useState(undefined); // undefined = loading, null = not logged in
@@ -41,7 +29,9 @@ export default function App() {
   const [testConfig, setTestConfig] = useState({
     selectedTopic: 'Full Syllabus',
     numQuestions: 20,
-    timeLimit: 30
+    timeLimit: 30,
+    testType: 'TODAY',
+    targetDate: getLocalDateStr()
   });
   const [studentDetails, setStudentDetails] = useState({
     name: '',
@@ -54,13 +44,26 @@ export default function App() {
   const [dbError, setDbError] = useState(null);
   const [adminConfig, setAdminConfig] = useState(null);
 
-  // Auto-clean expired custom questions has been disabled to preserve historical questions
-  /*
+  // Auto-clean custom questions older than yesterday (2-day retention lifecycle)
   useEffect(() => {
     const cleanExpiredQuestions = async () => {
-      const expiredQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_') && isQuestionExpired(q.id));
+      const yesterdayStr = getYesterdayDateStr();
+      const expiredQuestions = questionsList.filter(q => {
+        if (!q.id || !q.id.startsWith('custom_')) return false;
+        if (q.target_date) {
+          return q.target_date < yesterdayStr;
+        }
+        const tsStr = q.id.split('_')[1];
+        const ts = parseInt(tsStr, 10);
+        if (!isNaN(ts)) {
+          const qDate = getLocalDateStr(new Date(ts));
+          return qDate < yesterdayStr;
+        }
+        return false;
+      });
+
       if (expiredQuestions.length > 0) {
-        console.log("Automatically clearing expired custom questions:", expiredQuestions.map(q => q.id));
+        console.log("Automatically purging expired custom questions (older than yesterday):", expiredQuestions.map(q => q.id));
         try {
           for (const q of expiredQuestions) {
             await set(ref(db, `custom_questions/${q.id}`), null);
@@ -88,7 +91,6 @@ export default function App() {
       cleanExpiredQuestions();
     }
   }, [questionsList]);
-  */
 
   // Handle Google redirect result (fallback when popup was blocked)
   useEffect(() => {
@@ -202,8 +204,8 @@ export default function App() {
     }
   }, [authUser]);
 
-  const handleStartTest = (topic, count, time, details) => {
-    setTestConfig({ selectedTopic: topic, numQuestions: count, timeLimit: time });
+  const handleStartTest = (topic, count, time, details, testType = 'TODAY', targetDate = getLocalDateStr()) => {
+    setTestConfig({ selectedTopic: topic, numQuestions: count, timeLimit: time, testType, targetDate });
     if (details) {
       setStudentDetails(details);
       if (authUser?.uid) {
@@ -266,6 +268,8 @@ export default function App() {
       avatarSeed: displayName.split(' ')[0],
       studentPhoto: authUser?.photoURL || null,
       date: new Date().toISOString(),
+      testType: testConfig.testType || 'TODAY',
+      testDate: testConfig.targetDate || getLocalDateStr(),
       topic: testConfig.selectedTopic,
       score: results.score,
       totalMarks: calcTotalMarks,
@@ -275,7 +279,8 @@ export default function App() {
       unattemptedCount: results.unattemptedCount,
       accuracy: Math.round((results.correctCount / Math.max(results.totalQuestions, 1)) * 100),
       timeSpent: results.timeSpent,
-      levelStats: levelStats
+      levelStats: levelStats,
+      reviewDetails: results.reviewDetails || []
     };
     logs.unshift(newLog);
     localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logs));
@@ -412,6 +417,9 @@ export default function App() {
           selectedTopic={testConfig.selectedTopic}
           numQuestions={testConfig.numQuestions}
           timeLimit={testConfig.timeLimit}
+          testType={testConfig.testType}
+          targetDate={testConfig.targetDate}
+          studentYear={studentDetails.year || '3rd Year'}
           questionsList={questionsList}
           answersDb={answersDb}
           onFinish={handleFinishTest}
