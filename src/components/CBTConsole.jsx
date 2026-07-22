@@ -113,14 +113,17 @@ export default function CBTConsole({
     return () => clearInterval(timer);
   }, [timeLeft]);
 
+  const isSubmittedRef = useRef(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+
   const submitRef = useRef();
   submitRef.current = handleSubmit;
 
-  // Enforce fullscreen on start, auto-submit on exit
+  // Enforce fullscreen on start, auto-submit on exit or ESC key
   useEffect(() => {
     const enterFs = async () => {
       try {
-        if (document.documentElement.requestFullscreen) {
+        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
           await document.documentElement.requestFullscreen();
         }
       } catch (err) {
@@ -130,21 +133,27 @@ export default function CBTConsole({
     enterFs();
 
     const handleFsChange = () => {
-      if (!document.fullscreenElement) {
-        alert("Fullscreen mode exited! The test is now automatically submitted.");
+      if (!document.fullscreenElement && !isSubmittedRef.current) {
         if (submitRef.current) {
-          submitRef.current();
+          submitRef.current(true, "Full screen mode exited! Your practice test has been automatically submitted successfully.");
+        }
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !isSubmittedRef.current) {
+        if (submitRef.current) {
+          submitRef.current(true, "ESC key pressed! Your practice test has been automatically submitted successfully.");
         }
       }
     };
 
     document.addEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFsChange);
-      if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      }
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -466,17 +475,33 @@ export default function CBTConsole({
     setCurrentIndex(idx);
   };
 
-  // Submit test
-  function handleSubmit() {
-    // Calculate final scores
+  // Submit test safely
+  function handleSubmit(isAutoSubmit = false, reason = '') {
+    if (isSubmittedRef.current) return;
+    isSubmittedRef.current = true;
+
+    // Exit fullscreen cleanly if active
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+
+    if (isAutoSubmit && reason) {
+      alert(reason);
+    } else {
+      alert("Exam Submitted Successfully! 🎉");
+    }
+
+    // Calculate final scores safely
     let score = 0;
     let correctCount = 0;
     let incorrectCount = 0;
     let unattemptedCount = 0;
 
     const reviewDetails = testQuestions.map(q => {
-      const uAns = userAnswers[q.id] || '';
-      const correctAns = answersDb[q.id] || '';
+      const uAns = userAnswers[q.id] ? String(userAnswers[q.id]).trim() : '';
+      const correctAns = (answersDb && answersDb[q.id]) 
+        ? String(answersDb[q.id]).trim() 
+        : (q.correct_answer ? String(q.correct_answer).trim() : '');
       let isCorrect = false;
 
       // Scoring logic matching GATE
@@ -485,29 +510,25 @@ export default function CBTConsole({
       } else {
         // Evaluate based on type
         if (q.type === 'MCQ') {
-          isCorrect = uAns.trim().toUpperCase() === correctAns.trim().toUpperCase();
+          isCorrect = uAns.toUpperCase() === correctAns.toUpperCase();
           if (isCorrect) {
             correctCount++;
-            score += q.marks;
+            score += (parseInt(q.marks) || 1);
           } else {
             incorrectCount++;
-            score -= (q.negative_marks !== undefined ? parseFloat(q.negative_marks) : (q.marks / 3.0));
+            score -= (q.negative_marks !== undefined ? parseFloat(q.negative_marks) : ((parseInt(q.marks) || 1) / 3.0));
           }
         } else if (q.type === 'MSQ') {
-          // MSQ correct if exact options selected (e.g. A;D or B)
-          // No negative marks for MSQ
-          isCorrect = uAns.trim().toUpperCase() === correctAns.trim().toUpperCase();
+          isCorrect = uAns.toUpperCase() === correctAns.toUpperCase();
           if (isCorrect) {
             correctCount++;
-            score += q.marks;
+            score += (parseInt(q.marks) || 1);
           } else {
             incorrectCount++;
           }
         } else { // NAT
-          // NAT correct if falls within the range or matches exactly.
-          // In answersDb, it might be a single number (e.g. 5) or range (e.g. 27.19 to 27.39)
           const userNum = parseFloat(uAns);
-          if (!isNaN(userNum)) {
+          if (!isNaN(userNum) && correctAns) {
             if (correctAns.includes('to')) {
               const parts = correctAns.split('to');
               const low = parseFloat(parts[0]);
@@ -515,12 +536,14 @@ export default function CBTConsole({
               isCorrect = userNum >= low && userNum <= high;
             } else {
               const correctNum = parseFloat(correctAns);
-              isCorrect = Math.abs(userNum - correctNum) < 0.05;
+              if (!isNaN(correctNum)) {
+                isCorrect = Math.abs(userNum - correctNum) < 0.05;
+              }
             }
           }
           if (isCorrect) {
             correctCount++;
-            score += q.marks;
+            score += (parseInt(q.marks) || 1);
           } else {
             incorrectCount++;
           }
@@ -547,7 +570,7 @@ export default function CBTConsole({
       timeSpent: (timeLimit * 60) - timeLeft,
       reviewDetails
     });
-  };
+  }
 
   // Status summaries counting
   const statuses = Object.values(questionStatuses);
@@ -910,7 +933,7 @@ export default function CBTConsole({
 
           {/* Submit test button */}
           <div style={{ padding: '1rem', borderTop: '1px solid var(--ion-border)' }}>
-            <button className="cbt-btn cbt-btn-submit" style={{ width: '100%', padding: '0.6rem' }} onClick={handleSubmit}>
+            <button className="cbt-btn cbt-btn-submit" style={{ width: '100%', padding: '0.6rem' }} onClick={() => setShowSubmitModal(true)}>
               Submit Exam
             </button>
           </div>
@@ -919,6 +942,67 @@ export default function CBTConsole({
 
       {/* Floating Scientific Calculator */}
       {showCalc && <Calculator onClose={() => setShowCalc(false)} />}
+
+      {/* Submit Confirmation Modal */}
+      {showSubmitModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          padding: '1.5rem'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '20px',
+            maxWidth: '480px',
+            width: '100%',
+            padding: '2rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🎯</div>
+            <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem' }}>
+              Submit Practice Test?
+            </h2>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              Are you sure you want to finish and submit your exam?
+            </p>
+
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem', marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', textAlign: 'left', fontSize: '0.85rem' }}>
+              <div>Total Questions: <strong>{testQuestions.length}</strong></div>
+              <div>Answered: <strong style={{ color: '#16a34a' }}>{countAnswered + countMarkedAnswered}</strong></div>
+              <div>Marked for Review: <strong style={{ color: '#8b5cf6' }}>{countMarked}</strong></div>
+              <div>Unattempted: <strong style={{ color: '#dc2626' }}>{countNotAnswered + countNotVisited}</strong></div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+              <button
+                onClick={() => setShowSubmitModal(false)}
+                style={{ background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '10px', padding: '0.75rem 1.25rem', fontWeight: 600, cursor: 'pointer', flex: 1 }}
+              >
+                Return to Test
+              </button>
+              <button
+                onClick={() => {
+                  setShowSubmitModal(false);
+                  handleSubmit(false);
+                }}
+                style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.75rem 1.25rem', fontWeight: 700, cursor: 'pointer', flex: 1, boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+              >
+                Confirm Submit 🚀
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
