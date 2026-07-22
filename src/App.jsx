@@ -125,8 +125,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- Load exam databases in real-time ---
+  // --- Load exam databases in real-time (with 3-second safety timeout) ---
   useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setDbLoading(false);
+    }, 3000);
+
     setDbLoading(true);
     const qRef = ref(db, 'custom_questions');
     const aRef = ref(db, 'custom_answers');
