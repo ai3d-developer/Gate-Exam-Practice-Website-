@@ -37,59 +37,65 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   const isOutsidePracticeHours = currentHour < 9 || currentHour >= 23;
 
   useEffect(() => {
-    const regNo = studentDetails?.registerNumber || '';
-    
-    // If no register number is set (profile incomplete), show empty history by default
-    if (!regNo) {
-      setStudentLogs([]);
-      setLoadingLogs(false);
-      return;
-    }
+    const regNo = studentDetails?.registerNumber ? String(studentDetails.registerNumber).trim() : '';
+    setLoadingLogs(true);
 
     const logsRef = ref(db, 'student_logs');
-    setLoadingLogs(true);
     const unsubscribe = onValue(logsRef, (snapshot) => {
       const data = snapshot.val();
-      let filteredLogs = [];
+      let allFetchedLogs = [];
+
       if (data) {
-        const allLogs = [];
         const recurse = (node) => {
           if (!node || typeof node !== 'object') return;
-          if (node.studentName) {
-            allLogs.push(node);
+          if (node.studentName || node.date) {
+            allFetchedLogs.push(node);
             return;
           }
           Object.values(node).forEach(child => recurse(child));
         };
         recurse(data);
-
-        filteredLogs = allLogs.filter(log => {
-          return log.registerNumber && log.registerNumber.toString().trim() === regNo.toString().trim();
-        });
-      } else {
-        const raw = localStorage.getItem('gate_cbt_student_logs');
-        if (raw) {
-          const localLogs = JSON.parse(raw);
-          filteredLogs = localLogs.filter(log => {
-            return log.registerNumber && log.registerNumber.toString().trim() === regNo.toString().trim();
-          });
-        }
       }
-      filteredLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
-      setStudentLogs(filteredLogs);
+
+      // Merge with localStorage logs to ensure zero missing attempts
+      const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+      if (rawLocal) {
+        try {
+          const localLogs = JSON.parse(rawLocal);
+          localLogs.forEach(loc => {
+            if (!allFetchedLogs.some(f => f.id === loc.id || (f.date === loc.date && f.registerNumber === loc.registerNumber))) {
+              allFetchedLogs.push(loc);
+            }
+          });
+        } catch (e) {}
+      }
+
+      // Filter by registerNumber if available, else show all local attempts
+      let finalLogs = allFetchedLogs;
+      if (regNo) {
+        finalLogs = allFetchedLogs.filter(log => {
+          if (!log || !log.registerNumber) return false;
+          return String(log.registerNumber).trim() === regNo;
+        });
+      }
+
+      finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+      setStudentLogs(finalLogs);
       setLoadingLogs(false);
     }, (error) => {
       console.warn("Firebase student logs fetch failed, loading from local:", error);
-      const raw = localStorage.getItem('gate_cbt_student_logs');
-      let filteredLogs = [];
-      if (raw) {
-        const localLogs = JSON.parse(raw);
-        filteredLogs = localLogs.filter(log => {
-          return log.registerNumber && log.registerNumber.toString().trim() === regNo.toString().trim();
-        });
-        filteredLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+      const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+      let finalLogs = [];
+      if (rawLocal) {
+        try {
+          const localLogs = JSON.parse(rawLocal);
+          finalLogs = regNo
+            ? localLogs.filter(log => log && log.registerNumber && String(log.registerNumber).trim() === regNo)
+            : localLogs;
+          finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+        } catch (e) {}
       }
-      setStudentLogs(filteredLogs);
+      setStudentLogs(finalLogs);
       setLoadingLogs(false);
     });
 

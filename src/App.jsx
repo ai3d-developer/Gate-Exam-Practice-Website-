@@ -299,8 +299,13 @@ export default function App() {
           const rawRegNo = sDetails.registerNumber || 'N-A';
           const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
 
+          // Save structured log for admin tracking
           const structuredLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
           set(structuredLogRef, { ...newLog, id: regNo }).catch(err => console.warn("Firebase set log failed:", err));
+
+          // Save flat log for direct history queries
+          const flatLogRef = ref(db, `student_attempts/${newLog.id}`);
+          set(flatLogRef, newLog).catch(err => console.warn("Firebase set flat log failed:", err));
         }
       } catch (firebaseErr) {
         console.error("Failed to save student attempt log to Firebase:", firebaseErr);
