@@ -267,18 +267,19 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
 
   const effectiveConfig = adminConfig || { selectedTopic: 'Full Syllabus', numQuestions: 20, timeLimit: 30 };
 
+  const todayDateObj = new Date();
+  const yesterdayDateObj = new Date();
+  yesterdayDateObj.setDate(yesterdayDateObj.getDate() - 1);
+
   const todayDateStr = (() => {
-    const local = new Date();
-    const offset = local.getTimezoneOffset();
-    const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+    const offset = todayDateObj.getTimezoneOffset();
+    const adjusted = new Date(todayDateObj.getTime() - (offset * 60 * 1000));
     return adjusted.toISOString().split('T')[0];
   })();
 
   const yesterdayDateStr = (() => {
-    const local = new Date();
-    local.setDate(local.getDate() - 1);
-    const offset = local.getTimezoneOffset();
-    const adjusted = new Date(local.getTime() - (offset * 60 * 1000));
+    const offset = yesterdayDateObj.getTimezoneOffset();
+    const adjusted = new Date(yesterdayDateObj.getTime() - (offset * 60 * 1000));
     return adjusted.toISOString().split('T')[0];
   })();
 
@@ -315,8 +316,8 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   const [selectedAnswersLog, setSelectedAnswersLog] = useState(null);
 
   // Attendance checks - bulletproof matching by testDate, testType, or ISO date string
-  const todayDateObjStr = new Date().toDateString();
-  const yesterdayDateObjStr = yesterdayObj.toDateString();
+  const todayDateObjStr = todayDateObj.toDateString();
+  const yesterdayDateObjStr = yesterdayDateObj.toDateString();
 
   const hasAttendedToday = studentLogs.some(log => {
     if (!log) return false;
