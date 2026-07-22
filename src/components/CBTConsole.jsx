@@ -1030,6 +1030,7 @@ export default function CBTConsole({
               <button
                 onClick={() => {
                   setShowSubmitModal(false);
+                  isSubmittedRef.current = false;
                   handleSubmit(false);
                 }}
                 style={{

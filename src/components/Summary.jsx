@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 export default function Summary({ result, onBackToDashboard }) {
+  if (!result) {
+    return (
+      <div className="summary-container" style={{ textAlign: 'center', padding: '4rem' }}>
+        <h2 style={{ fontFamily: 'var(--font-title)', color: '#0f172a', marginBottom: '1rem' }}>Test Summary Submitted Successfully</h2>
+        <button
+          onClick={onBackToDashboard}
+          style={{ background: '#3b82f6', color: 'white', border: 'none', borderRadius: '10px', padding: '0.75rem 1.5rem', cursor: 'pointer', fontWeight: 700 }}
+        >
+          ⬅️ Back to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   const [modalPdf, setModalPdf] = useState(null); // { pdfName, pageNum }
   const pdfScale = 1.35; // Fixed scale, no zoom controls
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -28,10 +42,10 @@ export default function Summary({ result, onBackToDashboard }) {
   const isUnlocked = timeLeftSecs <= 0;
 
   // Compute metrics
-  const totalQuestions = result.totalQuestions;
-  const attemptedCount = result.correctCount + result.incorrectCount;
+  const totalQuestions = result.totalQuestions || 0;
+  const attemptedCount = (result.correctCount || 0) + (result.incorrectCount || 0);
   const scoreMax = totalQuestions * 2; // approximation or max marks
-  const scorePercentage = Math.round((result.correctCount / totalQuestions) * 100) || 0;
+  const scorePercentage = Math.round(((result.correctCount || 0) / Math.max(totalQuestions, 1)) * 100) || 0;
 
   // Persist stats updates to localStorage
   useEffect(() => {
