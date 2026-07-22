@@ -38,7 +38,7 @@
       }
     },
     "student_logs": {
-      ".read": "auth != null",
+      ".read": true,
       ".write": "auth != null"
     },
     "student_attempts": {

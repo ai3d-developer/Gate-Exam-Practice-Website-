@@ -1491,16 +1491,27 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         {activeTab === 'logs' && (() => {
           // 1. Filter logs by selected date
           const dateFilteredLogs = studentLogs.filter(log => {
-            if (!log.date) return false;
-            try {
-              const logLocalDate = new Date(log.date);
-              const offset = logLocalDate.getTimezoneOffset();
-              const adjusted = new Date(logLocalDate.getTime() - (offset * 60 * 1000));
-              const logDateStr = adjusted.toISOString().split('T')[0];
-              return logDateStr === selectedLogDate;
-            } catch (e) {
-              return log.date.startsWith(selectedLogDate);
+            if (!log) return false;
+            // Best match: match log.testDate (which is always YYYY-MM-DD formatted local date)
+            if (log.testDate && log.testDate === selectedLogDate) {
+              return true;
             }
+            // Second best: match log.date (ISO date string or local date string)
+            if (log.date) {
+              if (log.date.startsWith(selectedLogDate)) {
+                return true;
+              }
+              try {
+                const logLocalDate = new Date(log.date);
+                const offset = logLocalDate.getTimezoneOffset();
+                const adjusted = new Date(logLocalDate.getTime() - (offset * 60 * 1000));
+                const logDateStr = adjusted.toISOString().split('T')[0];
+                return logDateStr === selectedLogDate;
+              } catch (e) {
+                return false;
+              }
+            }
+            return false;
           });
 
           // 2. Filter logs by search query (Name or Reg No)
