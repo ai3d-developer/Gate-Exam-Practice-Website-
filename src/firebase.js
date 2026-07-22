@@ -6,6 +6,7 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut
 } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
@@ -64,6 +65,27 @@ export async function handleRedirectResult() {
 
 export async function signInAdmin(email, password) {
   return signInWithEmailAndPassword(auth, email, password);
+}
+
+// Sign in student with real Firebase account (auto-creates if not exists)
+// username is converted to username@gate-student.local so they get a real Firebase UID
+export async function signInStudent(username, password) {
+  const email = username.includes('@')
+    ? username.toLowerCase()
+    : `${username.toLowerCase().replace(/[^a-z0-9]/g, '')}@gate-student.local`;
+
+  try {
+    // Try sign in first
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result;
+  } catch (err) {
+    if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+      // Auto-create the account
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      return result;
+    }
+    throw err;
+  }
 }
 
 export async function signOut() {

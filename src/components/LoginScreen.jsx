@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithGoogle, signInAdmin, ADMIN_EMAIL } from '../firebase';
+import { signInWithGoogle, signInAdmin, signInStudent, ADMIN_EMAIL } from '../firebase';
 
 export default function LoginScreen({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState('student'); // 'student' | 'admin'
@@ -37,43 +37,35 @@ export default function LoginScreen({ onLoginSuccess }) {
       setError('Please fill in all fields.');
       return;
     }
+    if (studentEmail.trim().length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
+    if (studentPassword.trim().length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      // 1. If it looks like an email, try Firebase auth
-      if (studentEmail.includes('@')) {
-        try {
-          const userCredential = await signInAdmin(studentEmail, studentPassword);
-          if (userCredential.user) {
-            onLoginSuccess(userCredential.user, 'STUDENT');
-            setLoading(false);
-            return;
-          }
-        } catch (fbErr) {
-          console.warn('Firebase student email auth failed, trying local fallback:', fbErr);
-        }
+      // Use real Firebase authentication - creates account automatically on first login
+      const userCredential = await signInStudent(studentEmail.trim(), studentPassword.trim());
+      if (userCredential.user) {
+        // Clear any old localStorage user so onAuthStateChanged drives the session
+        localStorage.removeItem('gate_cbt_local_user');
+        onLoginSuccess(userCredential.user, 'STUDENT');
       }
-
-      // 2. Local fallback verification
-      if (studentEmail.length < 3) {
-        throw new Error('Username/Email must be at least 3 characters.');
-      }
-      if (studentPassword.length < 4) {
-        throw new Error('Password must be at least 4 characters.');
-      }
-
-      // Generate a stable UID derived from the username so that logs persist across logins
-      const stableUid = 'local_' + btoa(studentEmail.toLowerCase().split('@')[0]).replace(/[^a-zA-Z0-9]/g, '');
-      const mockUser = {
-        uid: stableUid,
-        email: studentEmail.includes('@') ? studentEmail.toLowerCase() : `${studentEmail.toLowerCase()}@student.com`,
-        displayName: studentEmail.split('@')[0],
-        role: 'STUDENT'
-      };
-      localStorage.setItem('gate_cbt_local_user', JSON.stringify(mockUser));
-      onLoginSuccess(mockUser, 'STUDENT');
     } catch (err) {
-      setError(err.message || 'Login failed.');
+      console.error('Student login error:', err);
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('Incorrect password. Please try again.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please wait a moment and try again.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('Password must be at least 6 characters.');
+      } else {
+        setError(err.message || 'Login failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
