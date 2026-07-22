@@ -33,7 +33,10 @@ export default function CBTConsole({
     })();
 
     // 1. Check if custom questions exist specifically allotted for today's target date
-    const todayTargetQuestions = questionsList.filter(q => q.target_date ? q.target_date === todayDateStr : (q.id && q.id.startsWith('custom_')));
+    const todayTargetQuestions = questionsList.filter(q => {
+      if (q.target_date) return q.target_date === todayDateStr;
+      return false; // exclude past/future dated questions from today's test
+    });
 
     let selected = [];
     if (todayTargetQuestions.length > 0) {

@@ -100,6 +100,10 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
   const customQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_'));
   const rawAllotted = customQuestions.filter(q => {
+    if (targetDate < todayDateStr) {
+      // Past exam dates are completed & locked; hide questions from Edit Questions tab as requested
+      return false;
+    }
     if (q.target_date) return q.target_date === targetDate;
     return targetDate === todayDateStr;
   });
@@ -582,24 +586,6 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            onClick={onClearAllQuestions}
-            style={{
-              background: 'rgba(239, 68, 68, 0.2)',
-              border: '1px solid #ef4444',
-              borderRadius: '8px',
-              padding: '0.5rem 1rem',
-              color: '#f87171',
-              fontWeight: 600,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.3)'; }}
-            onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; }}
-          >
-            🗑️ Clear All Questions
-          </button>
           <button
             onClick={onLogout}
             style={{

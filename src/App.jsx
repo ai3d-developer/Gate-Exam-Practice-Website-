@@ -8,6 +8,8 @@ import CBTConsole from './components/CBTConsole';
 import Summary from './components/Summary';
 import AdminConsole from './components/AdminConsole';
 
+// Custom questions auto-clean is disabled to keep all past questions date-wise
+/*
 const isQuestionExpired = (id) => {
   if (!id || !id.startsWith('custom_')) return false;
   const tsStr = id.split('_')[1];
@@ -28,6 +30,7 @@ const isQuestionExpired = (id) => {
   const now = new Date();
   return now >= expiryDate;
 };
+*/
 
 export default function App() {
   const [authUser, setAuthUser] = useState(undefined); // undefined = loading, null = not logged in
@@ -51,7 +54,8 @@ export default function App() {
   const [dbError, setDbError] = useState(null);
   const [adminConfig, setAdminConfig] = useState(null);
 
-  // Auto-clean expired custom questions when loaded
+  // Auto-clean expired custom questions has been disabled to preserve historical questions
+  /*
   useEffect(() => {
     const cleanExpiredQuestions = async () => {
       const expiredQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_') && isQuestionExpired(q.id));
@@ -84,6 +88,7 @@ export default function App() {
       cleanExpiredQuestions();
     }
   }, [questionsList]);
+  */
 
   // Handle Google redirect result (fallback when popup was blocked)
   useEffect(() => {
