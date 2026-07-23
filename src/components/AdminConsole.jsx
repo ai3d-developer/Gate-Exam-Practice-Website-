@@ -68,8 +68,19 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
-  // Tab 3: Student Logs
-  const [studentLogs, setStudentLogs] = useState([]);
+  // Tab 3: Student Logs (Pre-load from localStorage for 0ms instant response)
+  const [studentLogs, setStudentLogs] = useState(() => {
+    try {
+      const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+      if (rawLocal) {
+        const parsed = JSON.parse(rawLocal);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [logsFilter, setLogsFilter] = useState('all');
   const [logsSearchQuery, setLogsSearchQuery] = useState('');
   const [logsSortBy, setLogsSortBy] = useState('reg_asc');
@@ -309,56 +320,48 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     }
   }, [examConfig.selectedTopic, previewIndex]);
 
+  // Pre-fetch & background-sync admin student_logs from Firebase DB immediately on mount
   useEffect(() => {
-    if (activeTab === 'logs') {
-      // 1. Immediately display local logs for instant 0ms response
-      try {
-        const rawLocal = localStorage.getItem('gate_cbt_student_logs');
-        if (rawLocal) {
-          const parsed = JSON.parse(rawLocal);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setStudentLogs(parsed.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)));
+    const studentLogsRef = ref(db, 'student_logs');
+    const unsubscribe = onValue(studentLogsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const map = new Map();
+
+        // Include local cache first
+        try {
+          const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+          if (rawLocal) {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
 
-      // 2. Sync admin student_logs from Firebase DB (lightweight & fast)
-      const studentLogsRef = ref(db, 'student_logs');
-      const unsubscribe = onValue(studentLogsRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const map = new Map();
+        const recurse = (node) => {
+          if (!node || typeof node !== 'object') return;
+          if (node.studentName) {
+            const key = node.id || `${node.registerNumber}_${node.date}`;
+            map.set(key, node);
+            return;
+          }
+          Object.values(node).forEach(child => recurse(child));
+        };
+        recurse(data);
 
-          // Include local cache first
-          try {
-            const rawLocal = localStorage.getItem('gate_cbt_student_logs');
-            if (rawLocal) {
-              const parsed = JSON.parse(rawLocal);
-              if (Array.isArray(parsed)) {
-                parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
-              }
-            }
-          } catch (e) {}
+        const logsList = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        setStudentLogs(logsList);
 
-          const recurse = (node) => {
-            if (!node || typeof node !== 'object') return;
-            if (node.studentName) {
-              const key = node.id || `${node.registerNumber}_${node.date}`;
-              map.set(key, node);
-              return;
-            }
-            Object.values(node).forEach(child => recurse(child));
-          };
-          recurse(data);
+        // Update local cache so future mounts are 0ms instant
+        try {
+          localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logsList));
+        } catch (e) {}
+      }
+    });
 
-          const logsList = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-          setStudentLogs(logsList);
-        }
-      });
-
-      return () => unsubscribe();
-    }
-  }, [activeTab]);
+    return () => unsubscribe();
+  }, []);
 
   const handleSaveConfig = (e) => {
     e.preventDefault();
