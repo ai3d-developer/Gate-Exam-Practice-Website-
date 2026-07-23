@@ -30,16 +30,25 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
       setIsManualEntry(false);
     }
   }, [studentDetails]);
-  const [studentLogs, setStudentLogs] = useState([]);
+  const [studentLogs, setStudentLogs] = useState(() => {
+    const activeUid = authUser?.uid || auth.currentUser?.uid || localStorage.getItem('gate_cbt_active_uid');
+    const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+    if (rawLocal) {
+      try {
+        const localLogs = JSON.parse(rawLocal);
+        return localLogs.filter(loc => loc && (!activeUid || loc.uid === activeUid || !loc.uid));
+      } catch (e) {}
+    }
+    return [];
+  });
   const [loadingLogs, setLoadingLogs] = useState(true);
 
   const currentHour = new Date().getHours();
   const isOutsidePracticeHours = currentHour < 9 || currentHour >= 23;
 
   useEffect(() => {
-    const uid = authUser?.uid;
+    const uid = authUser?.uid || auth.currentUser?.uid || localStorage.getItem('gate_cbt_active_uid');
     if (!uid) {
-      setStudentLogs([]);
       setLoadingLogs(false);
       return;
     }
@@ -55,31 +64,25 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
         firebaseLogs = Object.values(data).filter(Boolean);
       }
 
-      // Merge with localStorage backup (only for this user's session)
-      const rawLocal = localStorage.getItem('gate_cbt_student_logs');
-      if (rawLocal) {
-        try {
-          const localLogs = JSON.parse(rawLocal);
-          localLogs.forEach(loc => {
-            if (loc && loc.uid === uid && !firebaseLogs.some(f => f.id === loc.id)) {
-              firebaseLogs.push(loc);
-            }
-          });
-        } catch (e) {}
-      }
-
       firebaseLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      // Firebase is single source of truth when connected:
+      // Sync localStorage with real Firebase logs (clears deleted logs from local storage)
+      try {
+        localStorage.setItem('gate_cbt_student_logs', JSON.stringify(firebaseLogs));
+      } catch (e) {}
+
       setStudentLogs(firebaseLogs);
       setLoadingLogs(false);
     }, (error) => {
-      console.warn("Firebase user_logs fetch failed, loading from localStorage:", error);
-      // Fallback: localStorage only for this uid
+      console.warn("Firebase user_logs fetch failed, loading from localStorage fallback:", error);
+      // Fallback: localStorage only when Firebase read fails
       const rawLocal = localStorage.getItem('gate_cbt_student_logs');
       let finalLogs = [];
       if (rawLocal) {
         try {
           const localLogs = JSON.parse(rawLocal);
-          finalLogs = localLogs.filter(loc => loc && loc.uid === uid);
+          finalLogs = localLogs.filter(loc => loc && (loc.uid === uid || !loc.uid));
           finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
         } catch (e) {}
       }
@@ -87,7 +90,22 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
       setLoadingLogs(false);
     });
 
-    return () => unsubscribe();
+    // Listen for instant local updates when test is submitted on this device
+    const handleLogUpdated = (e) => {
+      const newLog = e.detail;
+      if (newLog) {
+        setStudentLogs(prev => {
+          const filtered = prev.filter(l => l && l.id !== newLog.id);
+          return [newLog, ...filtered];
+        });
+      }
+    };
+    window.addEventListener('gate_cbt_log_updated', handleLogUpdated);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('gate_cbt_log_updated', handleLogUpdated);
+    };
   }, [authUser?.uid]);
 
   const topics = [
@@ -302,7 +320,10 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
     if (log.testDate && log.testDate === todayDateStr) return true;
     try {
       const d = new Date(log.date);
-      if (d.toISOString().split('T')[0] === todayDateStr || d.toDateString() === todayDateObjStr) {
+      const offset = d.getTimezoneOffset();
+      const adjusted = new Date(d.getTime() - (offset * 60 * 1000));
+      const logLocalDate = adjusted.toISOString().split('T')[0];
+      if (logLocalDate === todayDateStr || d.toDateString() === todayDateObjStr) {
         return true;
       }
     } catch (e) {}
@@ -312,10 +333,12 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
   const hasAttendedYesterday = studentLogs.some(log => {
     if (!log) return false;
     if (log.testDate && log.testDate === yesterdayDateStr) return true;
-    if (log.testType === 'YESTERDAY') return true;
     try {
       const d = new Date(log.date);
-      if (d.toISOString().split('T')[0] === yesterdayDateStr || d.toDateString() === yesterdayDateObjStr) {
+      const offset = d.getTimezoneOffset();
+      const adjusted = new Date(d.getTime() - (offset * 60 * 1000));
+      const logLocalDate = adjusted.toISOString().split('T')[0];
+      if (logLocalDate === yesterdayDateStr || d.toDateString() === yesterdayDateObjStr) {
         return true;
       }
     } catch (e) {}

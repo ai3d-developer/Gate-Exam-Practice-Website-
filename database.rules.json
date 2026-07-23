@@ -2,52 +2,47 @@
   "rules": {
     "custom_questions": {
       ".read": true,
-      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+      ".write": true
     },
     "custom_answers": {
       ".read": true,
-      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+      ".write": true
     },
     "exam_config": {
       ".read": true,
-      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+      ".write": true
     },
     "daily_exam_config": {
       ".read": true,
-      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+      ".write": true
     },
     "daily_questions": {
       ".read": true,
-      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+      ".write": true
     },
     "question_bank": {
       ".read": true,
-      ".write": "auth != null && auth.token.email == 'Gate2026@gmail.com'"
+      ".write": true
     },
     "student_profiles": {
-      ".read": "auth != null",
-      "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
-      }
+      ".read": true,
+      ".write": true
     },
     "user_logs": {
-      "$uid": {
-        ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'Gate2026@gmail.com')",
-        ".write": "auth != null && auth.uid == $uid"
-      }
+      ".read": true,
+      ".write": true
     },
     "student_logs": {
       ".read": true,
-      ".write": "auth != null"
+      ".write": true
     },
     "student_attempts": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".read": true,
+      ".write": true
     },
     "attempts_pool": {
-      ".read": "auth != null",
-      ".write": "auth != null"
+      ".read": true,
+      ".write": true
     }
   }
 }

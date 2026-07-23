@@ -101,8 +101,45 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
   const [bankSubjectFilter, setBankSubjectFilter] = useState('All');
   const [bankSearchQuery, setBankSearchQuery] = useState('');
+  const [bankDateFilter, setBankDateFilter] = useState('');
   const [uploadQuestionNumber, setUploadQuestionNumber] = useState(1);
   const [previewIndex, setPreviewIndex] = useState(-1);
+
+  // Handle Clipboard Screenshot Image Paste (Ctrl + V) in Upload Tab
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (activeTab !== 'upload') return;
+      const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          const file = item.getAsFile();
+          if (!file) continue;
+
+          if (file.size > 5 * 1024 * 1024) {
+            setUploadError('Pasted screenshot image too large. Max size is 5MB.');
+            return;
+          }
+
+          setUploadError('');
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setUploadForm(prev => ({ ...prev, image: reader.result }));
+            setUploadSuccess(true);
+            setTimeout(() => setUploadSuccess(false), 4000);
+          };
+          reader.readAsDataURL(file);
+          e.preventDefault();
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [activeTab]);
 
   const todayDateStr = (() => {
     const local = new Date();
@@ -136,14 +173,16 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     return isQuestionMatchingYears(q, targetYears);
   });
 
-  // Separate Image Questions (1..10) vs Manual Text Questions (11..20)
-  const imageQuestions = rawAllotted.filter(q => q.question_image && (!q.question_text || !q.question_text.trim()));
-  const textQuestions = rawAllotted.filter(q => !q.question_image || (q.question_text && q.question_text.trim()));
-
-  const allottedQuestionsForDate = [
-    ...imageQuestions.map((q, idx) => ({ ...q, original_num: (q.original_num && q.original_num <= 10) ? q.original_num : (idx + 1) })),
-    ...textQuestions.map((q, idx) => ({ ...q, original_num: (q.original_num && q.original_num >= 11) ? q.original_num : (idx + 11) }))
-  ].sort((a, b) => (a.original_num || 0) - (b.original_num || 0));
+  // Preserve exact original_num sequentially without artificial splitting
+  const allottedQuestionsForDate = rawAllotted
+    .map((q, idx) => {
+      const parsedNum = parseInt(q.original_num, 10);
+      return {
+        ...q,
+        original_num: !isNaN(parsedNum) ? parsedNum : (idx + 1)
+      };
+    })
+    .sort((a, b) => (a.original_num || 0) - (b.original_num || 0));
 
   useEffect(() => {
     if (rawAllotted.length === 0) {
@@ -170,9 +209,15 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       });
     } else {
       setPreviewIndex(-1);
-      setUploadQuestionNumber(rawAllotted.length + 1);
+      // Select smallest unused question number between 1 and max sequential limit
+      const usedNums = new Set(allottedQuestionsForDate.map(q => parseInt(q.original_num, 10)).filter(n => !isNaN(n)));
+      let nextAvailable = 1;
+      while (usedNums.has(nextAvailable) && nextAvailable <= (examConfig.numQuestions || 20)) {
+        nextAvailable++;
+      }
+      setUploadQuestionNumber(nextAvailable <= (examConfig.numQuestions || 20) ? nextAvailable : allottedQuestionsForDate.length + 1);
     }
-  }, [targetDate, targetYears, questionsList]);
+  }, [targetDate, targetYears]);
 
   const loadQuestionForPreview = (target) => {
     if (target === -1) {
@@ -825,8 +870,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {Array.from({ length: examConfig.numQuestions || 20 }).map((_, idx) => {
                   const qNum = idx + 1;
-                  const existingIdx = allottedQuestionsForDate.findIndex(q => q.original_num === qNum);
-                  const isCurrent = (previewIndex !== -1 && allottedQuestionsForDate[previewIndex]?.original_num === qNum) || (previewIndex === -1 && uploadQuestionNumber === qNum);
+                  const existingIdx = allottedQuestionsForDate.findIndex(q => parseInt(q.original_num, 10) === qNum);
+                  const isCurrent = (previewIndex !== -1 && parseInt(allottedQuestionsForDate[previewIndex]?.original_num, 10) === qNum) || (previewIndex === -1 && uploadQuestionNumber === qNum);
                   const hasQ = existingIdx !== -1;
 
                   return (
@@ -994,19 +1039,18 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     type="file"
                     accept="image/*"
                     onChange={handleImageChange}
-                    required={!previewIndex !== -1 && !uploadForm.question_text.trim()}
                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}
                   />
                   {uploadForm.image ? (
                     <div>
                       <img src={uploadForm.image} alt="preview" style={{ maxHeight: '200px', maxWidth: '100%', borderRadius: '8px', marginBottom: '0.5rem', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }} />
-                      <div style={{ color: '#065f46', fontWeight: 600, fontSize: '0.875rem' }}>✓ Image loaded — click to change</div>
+                      <div style={{ color: '#065f46', fontWeight: 600, fontSize: '0.875rem' }}>✓ Image loaded — click to change or paste new screenshot</div>
                     </div>
                   ) : (
                     <div>
                       <div style={{ fontSize: '2rem', marginBottom: '0.3rem' }}>🖼️</div>
-                      <div style={{ fontWeight: 600, color: '#334155', marginBottom: '0.25rem', fontSize: '0.9rem' }}>Click to upload question image</div>
-                      <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>PNG, JPG, WEBP — max 5MB</div>
+                      <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: '0.25rem', fontSize: '0.925rem' }}>Click to upload question image OR press <span style={{ background: '#3b82f6', color: 'white', padding: '0.15rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem' }}>Ctrl + V</span> to paste screenshot</div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>PNG, JPG, WEBP — max 5MB (Direct clipboard paste supported!)</div>
                     </div>
                   )}
                 </div>
@@ -1363,20 +1407,43 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   style={{ width: '100%', padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', fontWeight: 500, color: '#0f172a' }}
                 />
               </div>
+
+              <div style={{ flex: '1', minWidth: '180px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Filter by Target Date</label>
+                  {bankDateFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setBankDateFilter('')}
+                      style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                    >
+                      Clear Date
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  value={bankDateFilter}
+                  onChange={e => setBankDateFilter(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', background: 'white', cursor: 'pointer' }}
+                />
+              </div>
             </div>
 
             {(() => {
               const filteredBankQuestions = customQuestions.filter(q => {
                 const matchesSubject = bankSubjectFilter === 'All' || q.section === bankSubjectFilter;
+                const matchesDate = !bankDateFilter || q.target_date === bankDateFilter;
                 const qStr = bankSearchQuery.toLowerCase().trim();
                 const matchesSearch = !qStr ||
                   (q.question_text && q.question_text.toLowerCase().includes(qStr)) ||
                   (q.section && q.section.toLowerCase().includes(qStr)) ||
                   (q.level && q.level.toLowerCase().includes(qStr)) ||
                   (q.id && q.id.toLowerCase().includes(qStr)) ||
-                  (q.original_num && q.original_num.toString().includes(qStr));
+                  (q.original_num && q.original_num.toString().includes(qStr)) ||
+                  (q.target_date && q.target_date.includes(qStr));
 
-                return matchesSubject && matchesSearch;
+                return matchesSubject && matchesDate && matchesSearch;
               });
 
               if (filteredBankQuestions.length === 0) {
@@ -1551,6 +1618,20 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             return new Date(b.date || 0) - new Date(a.date || 0);
           });
 
+          const students2nd = studentsData["2nd Year"] || [];
+          const attended2ndRaw = students2nd.filter(student => 
+            dateFilteredLogs.some(log => 
+              (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
+              (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
+            )
+          );
+          const notAttended2ndRaw = students2nd.filter(student => 
+            !dateFilteredLogs.some(log => 
+              (log.registerNumber && log.registerNumber.toString().trim() === student.regNo.toString().trim()) ||
+              (log.studentName && log.studentName.toLowerCase().trim() === student.name.toLowerCase().trim())
+            )
+          );
+
           const students3rd = studentsData["3rd Year"] || [];
           const attended3rdRaw = students3rd.filter(student => 
             dateFilteredLogs.some(log => 
@@ -1638,6 +1719,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             });
           };
 
+          const attended2nd = sortAttendedList(filterBySearch(attended2ndRaw));
+          const notAttended2nd = sortNotAttendedList(filterBySearch(notAttended2ndRaw));
           const attended3rd = sortAttendedList(filterBySearch(attended3rdRaw));
           const notAttended3rd = sortNotAttendedList(filterBySearch(notAttended3rdRaw));
           const attended4th = sortAttendedList(filterBySearch(attended4thRaw));
@@ -1653,10 +1736,78 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             const reportDate = selectedLogDate;
             const activeSubject = examConfig.selectedTopic;
 
+            const show2ndAttended = logsFilter === 'all' || logsFilter === '2nd_all' || logsFilter === '2nd_attended';
+            const show2ndNotAttended = logsFilter === 'all' || logsFilter === '2nd_all' || logsFilter === '2nd_not_attended';
             const show3rdAttended = logsFilter === 'all' || logsFilter === '3rd_all' || logsFilter === '3rd_attended';
             const show3rdNotAttended = logsFilter === 'all' || logsFilter === '3rd_all' || logsFilter === '3rd_not_attended';
             const show4thAttended = logsFilter === 'all' || logsFilter === '4th_all' || logsFilter === '4th_attended';
             const show4thNotAttended = logsFilter === 'all' || logsFilter === '4th_all' || logsFilter === '4th_not_attended';
+
+            let table2ndAttendedHTML = '';
+            if (show2ndAttended) {
+              const rows = attended2nd.length === 0
+                ? '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 12px;">No 2nd year students attended on this date.</td></tr>'
+                : attended2nd.map(student => {
+                    const latestLog = getLatestAttempt(student);
+                    const d = latestLog ? new Date(latestLog.date) : null;
+                    const scoreStr = latestLog ? `${latestLog.score} / ${latestLog.totalMarks || latestLog.totalQuestions || 20}` : 'N/A';
+                    const accStr = latestLog ? `${latestLog.accuracy}%` : 'N/A';
+                    const timeStr = latestLog ? `${Math.floor(latestLog.timeSpent / 60)}m ${latestLog.timeSpent % 60}s` : 'N/A';
+                    const dateStr = d ? `${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'N/A';
+                    return `<tr>
+                      <td><strong>${student.regNo}</strong></td>
+                      <td><strong>${student.name}</strong></td>
+                      <td>${latestLog?.topic || 'N/A'}</td>
+                      <td style="color: #2563eb; font-weight: bold;">${scoreStr}</td>
+                      <td>${accStr}</td>
+                      <td>${timeStr}</td>
+                      <td>${dateStr}</td>
+                    </tr>`;
+                  }).join('');
+
+              table2ndAttendedHTML = `
+                <h2>👥 2nd Year — Attended Students (${attended2nd.length} / ${students2nd.length})</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reg No</th>
+                      <th>Student Name</th>
+                      <th>Latest Topic</th>
+                      <th>Score / Max</th>
+                      <th>Accuracy</th>
+                      <th>Time Spent</th>
+                      <th>Attempt Date/Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>`;
+            }
+
+            let table2ndNotAttendedHTML = '';
+            if (show2ndNotAttended) {
+              const rows = notAttended2nd.length === 0
+                ? '<tr><td colspan="4" style="text-align: center; color: #059669; font-weight: bold; padding: 12px;">All 2nd year students have attended!</td></tr>'
+                : notAttended2nd.map(s => `<tr>
+                    <td><strong>${s.regNo}</strong></td>
+                    <td>${s.name}</td>
+                    <td>2nd Year</td>
+                    <td><span class="badge-not">Not Attended</span></td>
+                  </tr>`).join('');
+
+              table2ndNotAttendedHTML = `
+                <h2>❌ 2nd Year — Not Attended Students (${notAttended2nd.length} / ${students2nd.length})</h2>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Reg No</th>
+                      <th>Student Name</th>
+                      <th>Year</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>`;
+            }
 
             let table3rdAttendedHTML = '';
             if (show3rdAttended) {
@@ -1794,16 +1945,16 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
               <!DOCTYPE html>
               <html>
               <head>
-                <title>GATE_Exam_Report_${reportDate}</title>
+                <title>GATE EE Exam Attendance Report - ${reportDate}</title>
                 <style>
-                  body { font-family: 'Segoe UI', Arial, sans-serif; padding: 25px; color: #0f172a; line-height: 1.5; background: #fff; }
+                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #1e293b; line-height: 1.5; }
                   h1 { font-size: 22px; color: #0f172a; margin: 0 0 4px 0; font-weight: 800; }
                   p { margin: 0 0 15px 0; color: #64748b; font-size: 13px; }
                   .header-box { border-bottom: 3px solid #3b82f6; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
-                  .summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-                  .card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; }
-                  .card-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-                  .card-val { font-size: 18px; font-weight: 800; color: #1e293b; margin-top: 4px; }
+                  .summary-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }
+                  .card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; }
+                  .card-title { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+                  .card-val { font-size: 16px; font-weight: 800; color: #1e293b; margin-top: 4px; }
                   h2 { font-size: 15px; margin-top: 24px; margin-bottom: 10px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
                   table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
                   th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
@@ -1834,6 +1985,10 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     <div class="card-val">${filteredLogsByDate.length}</div>
                   </div>
                   <div class="card">
+                    <div class="card-title">2nd Year Attended</div>
+                    <div class="card-val" style="color: #8b5cf6;">${attended2nd.length} / ${students2nd.length}</div>
+                  </div>
+                  <div class="card">
                     <div class="card-title">3rd Year Attended</div>
                     <div class="card-val" style="color: #059669;">${attended3rd.length} / ${students3rd.length}</div>
                   </div>
@@ -1843,10 +1998,12 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   </div>
                   <div class="card">
                     <div class="card-title">Total Absent</div>
-                    <div class="card-val" style="color: #dc2626;">${notAttended3rd.length + notAttended4th.length}</div>
+                    <div class="card-val" style="color: #dc2626;">${notAttended2nd.length + notAttended3rd.length + notAttended4th.length}</div>
                   </div>
                 </div>
 
+                ${table2ndAttendedHTML}
+                ${table2ndNotAttendedHTML}
                 ${table3rdAttendedHTML}
                 ${table3rdNotAttendedHTML}
                 ${table4thAttendedHTML}
@@ -1983,6 +2140,9 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                       }}
                     >
                       <option value="all">📝 All Attempt Logs ({filteredLogsByDate.length})</option>
+                      <option value="2nd_all">👥 2nd Year - Full Report (Attended & Not Attended)</option>
+                      <option value="2nd_attended">👥 2nd Year - Attended Only ({attended2nd.length} / {students2nd.length})</option>
+                      <option value="2nd_not_attended">❌ 2nd Year - Not Attended Only ({notAttended2nd.length} / {students2nd.length})</option>
                       <option value="3rd_all">👥 3rd Year - Full Report (Attended & Not Attended)</option>
                       <option value="3rd_attended">👥 3rd Year - Attended Only ({attended3rd.length} / {students3rd.length})</option>
                       <option value="3rd_not_attended">❌ 3rd Year - Not Attended Only ({notAttended3rd.length} / {students3rd.length})</option>
@@ -2074,12 +2234,13 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   </table>
                 )}
 
-                {(logsFilter === '3rd_all' || logsFilter === '4th_all') && (() => {
+                {(logsFilter === '2nd_all' || logsFilter === '3rd_all' || logsFilter === '4th_all') && (() => {
+                  const is2nd = logsFilter === '2nd_all';
                   const is3rd = logsFilter === '3rd_all';
-                  const attList = is3rd ? attended3rd : attended4th;
-                  const notAttList = is3rd ? notAttended3rd : notAttended4th;
-                  const totalCount = is3rd ? students3rd.length : students4th.length;
-                  const yearName = is3rd ? '3rd Year' : 'Final Year (4th Year)';
+                  const attList = is2nd ? attended2nd : is3rd ? attended3rd : attended4th;
+                  const notAttList = is2nd ? notAttended2nd : is3rd ? notAttended3rd : notAttended4th;
+                  const totalCount = is2nd ? students2nd.length : is3rd ? students3rd.length : students4th.length;
+                  const yearName = is2nd ? '2nd Year' : is3rd ? '3rd Year' : 'Final Year (4th Year)';
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -2166,8 +2327,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   );
                 })()}
 
-                {(logsFilter === '3rd_attended' || logsFilter === '4th_attended') && (() => {
-                  const list = logsFilter === '3rd_attended' ? attended3rd : attended4th;
+                {(logsFilter === '2nd_attended' || logsFilter === '3rd_attended' || logsFilter === '4th_attended') && (() => {
+                  const list = logsFilter === '2nd_attended' ? attended2nd : logsFilter === '3rd_attended' ? attended3rd : attended4th;
                   return (
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
                       <thead>
@@ -2207,8 +2368,8 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                   );
                 })()}
 
-                {(logsFilter === '3rd_not_attended' || logsFilter === '4th_not_attended') && (() => {
-                  const list = logsFilter === '3rd_not_attended' ? notAttended3rd : notAttended4th;
+                {(logsFilter === '2nd_not_attended' || logsFilter === '3rd_not_attended' || logsFilter === '4th_not_attended') && (() => {
+                  const list = logsFilter === '2nd_not_attended' ? notAttended2nd : logsFilter === '3rd_not_attended' ? notAttended3rd : notAttended4th;
                   return (
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '500px' }}>
                       <thead>

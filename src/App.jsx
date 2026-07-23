@@ -258,14 +258,26 @@ export default function App() {
 
       // Compile stats per Bloom's Level
       const levelStats = (results && results.reviewDetails) ? results.reviewDetails.reduce((acc, q) => {
-        const lvl = q.level || 'L1';
+        let lvl = q.level || q.blooms_level || 'L1';
+        if (typeof lvl === 'string') {
+          if (lvl.startsWith('L1') || lvl.toLowerCase().includes('remember')) lvl = 'L1';
+          else if (lvl.startsWith('L2') || lvl.toLowerCase().includes('understand')) lvl = 'L2';
+          else if (lvl.startsWith('L3') || lvl.toLowerCase().includes('apply')) lvl = 'L3';
+          else if (lvl.startsWith('L4') || lvl.toLowerCase().includes('analyze')) lvl = 'L4';
+          else if (lvl.startsWith('L5') || lvl.toLowerCase().includes('evaluate')) lvl = 'L5';
+          else if (lvl.startsWith('L6') || lvl.toLowerCase().includes('create')) lvl = 'L6';
+          else lvl = 'L3';
+        } else {
+          lvl = 'L3';
+        }
+
         if (!acc[lvl]) {
           acc[lvl] = { correct: 0, incorrect: 0, unattempted: 0, total: 0 };
         }
         acc[lvl].total++;
-        if (q.isCorrect === 'correct') {
+        if (q.isCorrect === 'correct' || q.isCorrect === true) {
           acc[lvl].correct++;
-        } else if (q.isCorrect === 'incorrect') {
+        } else if (q.isCorrect === 'incorrect' || q.isCorrect === false) {
           acc[lvl].incorrect++;
         } else {
           acc[lvl].unattempted++;
@@ -275,13 +287,15 @@ export default function App() {
 
       const calcTotalMarks = (results && results.totalMarks) || (results && results.reviewDetails ? results.reviewDetails.reduce((sum, q) => sum + (parseInt(q.marks) || 1), 0) : (results ? results.totalQuestions : 1));
 
+      const currentUid = authUser?.uid || auth.currentUser?.uid || null;
+
       const newLog = {
         id: `log_${Date.now()}`,
-        uid: authUser?.uid || null,
+        uid: currentUid,
         studentName: displayName,
         department: sDetails.department || 'General',
         year: sDetails.year || 'N/A',
-        registerNumber: sDetails.registerNumber || 'N/A',
+        registerNumber: sDetails.registerNumber || 'N-A',
         avatarSeed: String(displayName).split(' ')[0],
         studentPhoto: authUser?.photoURL || null,
         date: new Date().toISOString(),
@@ -300,29 +314,35 @@ export default function App() {
         reviewDetails: results ? results.reviewDetails : []
       };
 
-      logs.unshift(newLog);
-      // Store logs keyed per-user in localStorage to avoid cross-user contamination
-      localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logs));
+      const filteredLogs = logs.filter(l => l && l.id !== newLog.id);
+      filteredLogs.unshift(newLog);
+      // Store logs keyed per-user in localStorage
+      localStorage.setItem('gate_cbt_student_logs', JSON.stringify(filteredLogs));
+
+      // Notify Dashboard instantly
+      window.dispatchEvent(new CustomEvent('gate_cbt_log_updated', { detail: newLog }));
 
       // Save attempt to Firebase Realtime DB
       try {
-        if (db && authUser?.uid) {
-          const uid = authUser.uid;
+        if (db && currentUid) {
           const dateObj = new Date(newLog.date);
           const offset = dateObj.getTimezoneOffset();
           const adjusted = new Date(dateObj.getTime() - (offset * 60 * 1000));
           const dateStr = adjusted.toISOString().split('T')[0];
 
+          // Sanitize payload: strip any undefined fields (Firebase set rejects objects with undefined properties)
+          const firebasePayload = JSON.parse(JSON.stringify(newLog));
+
           // PRIMARY: Save under user_logs/${uid}/${logId} — per-user isolated path
-          const userLogRef = ref(db, `user_logs/${uid}/${newLog.id}`);
-          set(userLogRef, newLog).catch(err => console.warn("Firebase user_logs set failed:", err));
+          const userLogRef = ref(db, `user_logs/${currentUid}/${newLog.id}`);
+          set(userLogRef, firebasePayload).catch(err => console.warn("Firebase user_logs set failed:", err));
 
           // SECONDARY: Save to admin view path for admin dashboard
           const year = sDetails.year || '3rd Year';
           const rawRegNo = sDetails.registerNumber || sDetails.name || 'N-A';
           const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
           const adminLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
-          set(adminLogRef, { ...newLog, uid }).catch(err => console.warn("Firebase admin log failed:", err));
+          set(adminLogRef, firebasePayload).catch(err => console.warn("Firebase admin log failed:", err));
         }
       } catch (firebaseErr) {
         console.error("Failed to save student attempt log to Firebase:", firebaseErr);
