@@ -311,33 +311,74 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
   useEffect(() => {
     if (activeTab === 'logs') {
-      const logsRef = ref(db, 'student_logs');
-      const unsubscribe = onValue(logsRef, (snapshot) => {
+      const studentLogsRef = ref(db, 'student_logs');
+      const userLogsRef = ref(db, 'user_logs');
+
+      let studentLogsData = [];
+      let userLogsData = [];
+
+      const combineAndSetLogs = () => {
+        const map = new Map();
+
+        // 1. Add localStorage logs first (fallback)
+        try {
+          const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+          if (rawLocal) {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
+            }
+          }
+        } catch (e) {}
+
+        // 2. Add Firebase user_logs
+        userLogsData.forEach(l => { if (l && l.id) map.set(l.id, l); });
+
+        // 3. Add Firebase student_logs
+        studentLogsData.forEach(l => { if (l && l.id) map.set(l.id, l); });
+
+        const combined = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        setStudentLogs(combined);
+      };
+
+      const unsubStudent = onValue(studentLogsRef, (snapshot) => {
         const data = snapshot.val();
+        studentLogsData = [];
         if (data) {
-          const allLogs = [];
           const recurse = (node) => {
             if (!node || typeof node !== 'object') return;
             if (node.studentName) {
-              allLogs.push(node);
+              studentLogsData.push(node);
               return;
             }
             Object.values(node).forEach(child => recurse(child));
           };
           recurse(data);
-
-          const logsList = allLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
-          setStudentLogs(logsList);
-        } else {
-          const raw = localStorage.getItem('gate_cbt_student_logs');
-          const defaultLogs = [
-            { id: 'mock1', studentName: 'Rahul Sharma', avatarSeed: 'Rahul', date: '2026-07-16T14:32:00Z', topic: 'Control Systems', score: 8.33, totalQuestions: 10, correctCount: 7, incorrectCount: 3, unattemptedCount: 0, accuracy: 70, timeSpent: 420 },
-            { id: 'mock2', studentName: 'Aditi Verma', avatarSeed: 'Aditi', date: '2026-07-16T18:15:00Z', topic: 'Electric circuits', score: 13.67, totalQuestions: 15, correctCount: 11, incorrectCount: 4, unattemptedCount: 0, accuracy: 73, timeSpent: 680 }
-          ];
-          setStudentLogs(raw ? JSON.parse(raw) : defaultLogs);
         }
+        combineAndSetLogs();
       });
-      return () => unsubscribe();
+
+      const unsubUser = onValue(userLogsRef, (snapshot) => {
+        const data = snapshot.val();
+        userLogsData = [];
+        if (data) {
+          const recurse = (node) => {
+            if (!node || typeof node !== 'object') return;
+            if (node.studentName) {
+              userLogsData.push(node);
+              return;
+            }
+            Object.values(node).forEach(child => recurse(child));
+          };
+          recurse(data);
+        }
+        combineAndSetLogs();
+      });
+
+      return () => {
+        unsubStudent();
+        unsubUser();
+      };
     }
   }, [activeTab]);
 
