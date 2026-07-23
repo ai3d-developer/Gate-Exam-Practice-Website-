@@ -311,74 +311,52 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
 
   useEffect(() => {
     if (activeTab === 'logs') {
-      const studentLogsRef = ref(db, 'student_logs');
-      const userLogsRef = ref(db, 'user_logs');
-
-      let studentLogsData = [];
-      let userLogsData = [];
-
-      const combineAndSetLogs = () => {
-        const map = new Map();
-
-        // 1. Add localStorage logs first (fallback)
-        try {
-          const rawLocal = localStorage.getItem('gate_cbt_student_logs');
-          if (rawLocal) {
-            const parsed = JSON.parse(rawLocal);
-            if (Array.isArray(parsed)) {
-              parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
-            }
+      // 1. Immediately display local logs for instant 0ms response
+      try {
+        const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setStudentLogs(parsed.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)));
           }
-        } catch (e) {}
+        }
+      } catch (e) {}
 
-        // 2. Add Firebase user_logs
-        userLogsData.forEach(l => { if (l && l.id) map.set(l.id, l); });
-
-        // 3. Add Firebase student_logs
-        studentLogsData.forEach(l => { if (l && l.id) map.set(l.id, l); });
-
-        const combined = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        setStudentLogs(combined);
-      };
-
-      const unsubStudent = onValue(studentLogsRef, (snapshot) => {
+      // 2. Sync admin student_logs from Firebase DB (lightweight & fast)
+      const studentLogsRef = ref(db, 'student_logs');
+      const unsubscribe = onValue(studentLogsRef, (snapshot) => {
         const data = snapshot.val();
-        studentLogsData = [];
         if (data) {
+          const map = new Map();
+
+          // Include local cache first
+          try {
+            const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+            if (rawLocal) {
+              const parsed = JSON.parse(rawLocal);
+              if (Array.isArray(parsed)) {
+                parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
+              }
+            }
+          } catch (e) {}
+
           const recurse = (node) => {
             if (!node || typeof node !== 'object') return;
             if (node.studentName) {
-              studentLogsData.push(node);
+              const key = node.id || `${node.registerNumber}_${node.date}`;
+              map.set(key, node);
               return;
             }
             Object.values(node).forEach(child => recurse(child));
           };
           recurse(data);
+
+          const logsList = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+          setStudentLogs(logsList);
         }
-        combineAndSetLogs();
       });
 
-      const unsubUser = onValue(userLogsRef, (snapshot) => {
-        const data = snapshot.val();
-        userLogsData = [];
-        if (data) {
-          const recurse = (node) => {
-            if (!node || typeof node !== 'object') return;
-            if (node.studentName) {
-              userLogsData.push(node);
-              return;
-            }
-            Object.values(node).forEach(child => recurse(child));
-          };
-          recurse(data);
-        }
-        combineAndSetLogs();
-      });
-
-      return () => {
-        unsubStudent();
-        unsubUser();
-      };
+      return () => unsubscribe();
     }
   }, [activeTab]);
 
