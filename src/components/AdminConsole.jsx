@@ -1434,30 +1434,40 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                 />
               </div>
 
-              <div style={{ flex: '1', minWidth: '180px' }}>
+              <div style={{ flex: '1.4', minWidth: '280px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Filter by Target Date</label>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>📅 Filter by Target Date</label>
                   {bankDateFilter && (
                     <button
                       type="button"
                       onClick={() => setBankDateFilter('')}
-                      style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                      style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
                     >
-                      Clear Date
+                      Clear Date ✖
                     </button>
                   )}
                 </div>
-                <select
-                  value={bankDateFilter}
-                  onChange={e => setBankDateFilter(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', background: 'white', cursor: 'pointer' }}
-                >
-                  <option value="">All Dates ({customQuestions.length} Questions)</option>
-                  {Array.from(new Set(customQuestions.map(q => q.target_date).filter(Boolean))).sort().reverse().map(d => {
-                    const dCount = customQuestions.filter(q => q.target_date === d).length;
-                    return <option key={d} value={d}>{d} ({dCount} Qs)</option>;
-                  })}
-                </select>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <select
+                    value={bankDateFilter}
+                    onChange={e => setBankDateFilter(e.target.value)}
+                    style={{ flex: 1, padding: '0.55rem 0.65rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', background: 'white', cursor: 'pointer' }}
+                  >
+                    <option value="">All Dates ({customQuestions.length} Questions)</option>
+                    {Array.from(new Set(customQuestions.map(q => q.target_date).filter(Boolean))).sort().reverse().map(d => {
+                      const dCount = customQuestions.filter(q => q.target_date === d).length;
+                      return <option key={d} value={d}>{d} ({dCount} Qs)</option>;
+                    })}
+                  </select>
+
+                  <input
+                    type="date"
+                    value={bankDateFilter}
+                    onChange={e => setBankDateFilter(e.target.value)}
+                    title="Select Date from Calendar"
+                    style={{ width: '135px', padding: '0.55rem 0.5rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', background: 'white', cursor: 'pointer' }}
+                  />
+                </div>
               </div>
             </div>
 
