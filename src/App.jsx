@@ -21,8 +21,20 @@ const getYesterdayDateStr = () => {
 };
 
 export default function App() {
-  const [authUser, setAuthUser] = useState(undefined); // undefined = loading, null = not logged in
-  const [userRole, setUserRole] = useState(null); // 'ADMIN' | 'STUDENT'
+  const [authUser, setAuthUser] = useState(() => {
+    try {
+      const cached = localStorage.getItem('gate_cbt_auth_user');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return undefined;
+  });
+  const [userRole, setUserRole] = useState(() => {
+    try {
+      const role = localStorage.getItem('gate_cbt_auth_role');
+      if (role) return role;
+    } catch (e) {}
+    return null;
+  });
   const [currentScreen, setCurrentScreen] = useState('DASHBOARD');
   const [questionsList, setQuestionsList] = useState(() => {
     try {
@@ -124,40 +136,40 @@ export default function App() {
     handleRedirectResult().catch(console.error);
   }, []);
 
-  // --- Auth Listener: Always use real Firebase auth (remove old fake local sessions) ---
+  // --- Fast Auth Listener: Non-blocking session sync ---
   useEffect(() => {
-    // Auto-clear any OLD fake local user (uid starts with 'local_') — they can't write to Firebase
-    const localUserJson = localStorage.getItem('gate_cbt_local_user');
-    if (localUserJson) {
-      try {
-        const user = JSON.parse(localUserJson);
-        if (!user.uid || user.uid.startsWith('local_') || user.uid.startsWith('local_std_')) {
-          // Fake user — remove it and force real Firebase login
-          localStorage.removeItem('gate_cbt_local_user');
-          localStorage.removeItem('gate_cbt_student_logs');
-          localStorage.removeItem('gate_cbt_active_uid');
-          console.log('Cleared old fake local user session, requiring real Firebase login');
-        }
-      } catch (e) {
-        localStorage.removeItem('gate_cbt_local_user');
-      }
-    }
-
-    // Always use Firebase onAuthStateChanged as the single source of truth
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // Clear old session logs if the user changed
         const prevUid = localStorage.getItem('gate_cbt_active_uid');
         if (prevUid && prevUid !== user.uid) {
           localStorage.removeItem('gate_cbt_student_logs');
         }
         localStorage.setItem('gate_cbt_active_uid', user.uid);
         const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
-        setUserRole(isAdmin ? 'ADMIN' : 'STUDENT');
+        const role = isAdmin ? 'ADMIN' : 'STUDENT';
+        setUserRole(role);
+        setAuthUser(user);
+        try {
+          localStorage.setItem('gate_cbt_auth_user', JSON.stringify({ uid: user.uid, email: user.email, displayName: user.displayName }));
+          localStorage.setItem('gate_cbt_auth_role', role);
+        } catch (e) {}
       } else {
+        // If no Firebase user, check if we have a valid cached local user (e.g., admin_gate2026)
+        const cachedUserJson = localStorage.getItem('gate_cbt_auth_user');
+        if (cachedUserJson) {
+          try {
+            const cachedUser = JSON.parse(cachedUserJson);
+            if (cachedUser && cachedUser.uid) {
+              setAuthUser(cachedUser);
+              const cachedRole = localStorage.getItem('gate_cbt_auth_role') || (cachedUser.uid.includes('admin') ? 'ADMIN' : 'STUDENT');
+              setUserRole(cachedRole);
+              return;
+            }
+          } catch (e) {}
+        }
+        setAuthUser(null);
         setUserRole(null);
       }
-      setAuthUser(user);
     });
     return () => unsubscribe();
   }, []);
@@ -489,8 +501,13 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch (e) {}
+    localStorage.removeItem('gate_cbt_auth_user');
+    localStorage.removeItem('gate_cbt_auth_role');
     localStorage.removeItem('gate_cbt_local_user');
+    localStorage.removeItem('gate_cbt_active_uid');
     setAuthUser(null);
     setUserRole(null);
     setCurrentScreen('DASHBOARD');

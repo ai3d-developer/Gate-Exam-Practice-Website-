@@ -48,12 +48,18 @@ export default function LoginScreen({ onLoginSuccess }) {
     setLoading(true);
     setError('');
     try {
-      // Use real Firebase authentication - creates account automatically on first login
       const userCredential = await signInStudent(studentEmail.trim(), studentPassword.trim());
-      if (userCredential.user) {
-        // Clear any old localStorage user so onAuthStateChanged drives the session
-        localStorage.removeItem('gate_cbt_local_user');
-        onLoginSuccess(userCredential.user, 'STUDENT');
+      if (userCredential && userCredential.user) {
+        const u = userCredential.user;
+        const studentUserObj = {
+          uid: u.uid,
+          email: u.email,
+          displayName: u.displayName || studentEmail.trim()
+        };
+        localStorage.setItem('gate_cbt_auth_user', JSON.stringify(studentUserObj));
+        localStorage.setItem('gate_cbt_auth_role', 'STUDENT');
+        localStorage.setItem('gate_cbt_active_uid', u.uid);
+        onLoginSuccess(studentUserObj, 'STUDENT');
       }
     } catch (err) {
       console.error('Student login error:', err);
@@ -84,36 +90,46 @@ export default function LoginScreen({ onLoginSuccess }) {
     const targetAdminEmail = ADMIN_EMAIL.toLowerCase();
 
     try {
-      // 1. Try Firebase Auth first
-      if (formattedEmail === targetAdminEmail) {
-        try {
-          const userCredential = await signInAdmin(formattedEmail, adminPassword);
-          if (userCredential.user) {
-            onLoginSuccess(userCredential.user, 'ADMIN');
-            setLoading(false);
-            return;
-          }
-        } catch (fbErr) {
-          console.warn('Firebase admin auth failed, trying local fallback:', fbErr);
-        }
-      }
-
-      // 2. Local Fallback Validation
+      // 1. Check direct admin credentials first (Instant 0ms Auth!)
       const isValidAdminUser = adminEmail.toLowerCase() === 'admin' || formattedEmail === targetAdminEmail;
       const isValidAdminPass = ['gate2026', 'Gate2026', 'admin123', 'gate123'].includes(adminPassword);
 
       if (isValidAdminUser && isValidAdminPass) {
-        const mockAdminUser = {
-          uid: 'local_admin_' + Date.now(),
+        const adminUserObj = {
+          uid: 'admin_gate2026',
           email: 'Gate2026@gmail.com',
           displayName: 'Admin',
           role: 'ADMIN'
         };
-        localStorage.setItem('gate_cbt_local_user', JSON.stringify(mockAdminUser));
-        onLoginSuccess(mockAdminUser, 'ADMIN');
-      } else {
-        throw new Error('Invalid credentials. Check your admin email/username and password.');
+        localStorage.setItem('gate_cbt_auth_user', JSON.stringify(adminUserObj));
+        localStorage.setItem('gate_cbt_auth_role', 'ADMIN');
+        localStorage.setItem('gate_cbt_active_uid', 'admin_gate2026');
+        onLoginSuccess(adminUserObj, 'ADMIN');
+        setLoading(false);
+        return;
       }
+
+      // 2. Try Firebase Auth
+      if (formattedEmail === targetAdminEmail) {
+        const userCredential = await signInAdmin(formattedEmail, adminPassword);
+        if (userCredential && userCredential.user) {
+          const u = userCredential.user;
+          const adminUserObj = {
+            uid: u.uid,
+            email: u.email,
+            displayName: u.displayName || 'Admin',
+            role: 'ADMIN'
+          };
+          localStorage.setItem('gate_cbt_auth_user', JSON.stringify(adminUserObj));
+          localStorage.setItem('gate_cbt_auth_role', 'ADMIN');
+          localStorage.setItem('gate_cbt_active_uid', u.uid);
+          onLoginSuccess(adminUserObj, 'ADMIN');
+          setLoading(false);
+          return;
+        }
+      }
+
+      throw new Error('Invalid credentials. Check your admin email/username and password.');
     } catch (err) {
       setError(err.message || 'Admin login failed.');
     } finally {
