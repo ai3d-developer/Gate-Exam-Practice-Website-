@@ -55,13 +55,36 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
 
     setLoadingLogs(true);
 
-    // Fetch ONLY this student's logs from their isolated Firebase path: user_logs/${uid}/
-    const userLogsRef = ref(db, `user_logs/${uid}`);
+    // Fetch this student's logs from user_logs (supporting year-wise: user_logs/${year}/${uid} & legacy: user_logs/${uid})
+    const userLogsRef = ref(db, 'user_logs');
     const unsubscribe = onValue(userLogsRef, (snapshot) => {
       const data = snapshot.val();
       let firebaseLogs = [];
       if (data && typeof data === 'object') {
-        firebaseLogs = Object.values(data).filter(Boolean);
+        const logsMap = new Map();
+
+        const collectUserLogs = (node) => {
+          if (!node || typeof node !== 'object') return;
+
+          // If current node directly has child matching this student's uid
+          if (node[uid] && typeof node[uid] === 'object') {
+            Object.values(node[uid]).forEach(log => {
+              if (log && typeof log === 'object' && log.id) {
+                logsMap.set(log.id, log);
+              }
+            });
+          }
+
+          // Recurse into sub-nodes (e.g. '2nd Year', '3rd Year', '4th Year' year folders)
+          Object.keys(node).forEach(key => {
+            if (key !== uid && typeof node[key] === 'object') {
+              collectUserLogs(node[key]);
+            }
+          });
+        };
+
+        collectUserLogs(data);
+        firebaseLogs = Array.from(logsMap.values());
       }
 
       firebaseLogs.sort((a, b) => new Date(b.date) - new Date(a.date));

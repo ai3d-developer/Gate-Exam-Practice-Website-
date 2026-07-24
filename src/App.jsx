@@ -142,25 +142,59 @@ export default function App() {
     }, 3000);
 
     setDbLoading(true);
+    let customMap = {};
+    let dailyMap = {};
+
+    const combineAndSetQuestions = () => {
+      const combinedMap = new Map();
+      // 1. Add questions from custom_questions
+      Object.values(customMap).forEach(q => {
+        if (q && q.id) combinedMap.set(q.id, q);
+      });
+      // 2. Add questions from daily_questions (flattened)
+      Object.values(dailyMap).forEach(dateGroup => {
+        if (dateGroup && typeof dateGroup === 'object') {
+          Object.values(dateGroup).forEach(q => {
+            if (q && q.id) {
+              const existing = combinedMap.get(q.id) || {};
+              combinedMap.set(q.id, { ...existing, ...q });
+            }
+          });
+        }
+      });
+
+      const finalQuestions = Array.from(combinedMap.values());
+      if (finalQuestions.length > 0) {
+        try {
+          localStorage.setItem('gate_cbt_custom_questions', JSON.stringify(finalQuestions));
+        } catch (e) {}
+        setQuestionsList(finalQuestions);
+      } else {
+        const customQJson = localStorage.getItem('gate_cbt_custom_questions');
+        if (customQJson) setQuestionsList(JSON.parse(customQJson));
+      }
+      setDbLoading(false);
+    };
+
     const qRef = ref(db, 'custom_questions');
+    const dqRef = ref(db, 'daily_questions');
     const aRef = ref(db, 'custom_answers');
 
     const unsubQ = onValue(qRef, (snapshot) => {
-      let questions = [];
       const val = snapshot.val();
-      if (val) {
-        questions = Object.values(val);
-      } else {
-        const customQJson = localStorage.getItem('gate_cbt_custom_questions');
-        if (customQJson) questions = JSON.parse(customQJson);
-      }
-      setQuestionsList(questions);
-      setDbLoading(false);
+      customMap = (val && typeof val === 'object') ? val : {};
+      combineAndSetQuestions();
     }, (err) => {
       console.warn("Realtime DB questions subscription failed, loading from local:", err);
-      const customQJson = localStorage.getItem('gate_cbt_custom_questions');
-      if (customQJson) setQuestionsList(JSON.parse(customQJson));
-      setDbLoading(false);
+      combineAndSetQuestions();
+    });
+
+    const unsubDQ = onValue(dqRef, (snapshot) => {
+      const val = snapshot.val();
+      dailyMap = (val && typeof val === 'object') ? val : {};
+      combineAndSetQuestions();
+    }, (err) => {
+      console.warn("Realtime DB daily_questions subscription failed:", err);
     });
 
     const unsubA = onValue(aRef, (snapshot) => {
@@ -181,7 +215,9 @@ export default function App() {
 
     return () => {
       unsubQ();
+      unsubDQ();
       unsubA();
+      clearTimeout(safetyTimer);
     };
   }, []);
 
@@ -333,12 +369,29 @@ export default function App() {
           // Sanitize payload: strip any undefined fields (Firebase set rejects objects with undefined properties)
           const firebasePayload = JSON.parse(JSON.stringify(newLog));
 
-          // PRIMARY: Save under user_logs/${uid}/${logId} — per-user isolated path
-          const userLogRef = ref(db, `user_logs/${currentUid}/${newLog.id}`);
+          // Determine exact student year from sDetails, studentDetails, or students.json fallback
+          let year = sDetails.year || studentDetails?.year;
+          if (!year || year === 'N/A') {
+            const regNoOrName = sDetails.registerNumber || sDetails.name;
+            if (regNoOrName) {
+              const matchedStudent = Object.values(studentsData).flat().find(s => 
+                (s.regNo && String(s.regNo) === String(regNoOrName)) ||
+                (s.name && String(s.name).toLowerCase() === String(regNoOrName).toLowerCase())
+              );
+              if (matchedStudent && matchedStudent.year) {
+                year = matchedStudent.year;
+              }
+            }
+          }
+          if (!year || year === 'N/A') year = '3rd Year';
+
+          const sanitizedYear = String(year).trim().replace(/[.#$[\]/]/g, '_');
+
+          // PRIMARY: Save under user_logs/${sanitizedYear}/${uid}/${logId} — year-wise per-user isolated path
+          const userLogRef = ref(db, `user_logs/${sanitizedYear}/${currentUid}/${newLog.id}`);
           set(userLogRef, firebasePayload).catch(err => console.warn("Firebase user_logs set failed:", err));
 
           // SECONDARY: Save to admin view path for admin dashboard
-          const year = sDetails.year || '3rd Year';
           const rawRegNo = sDetails.registerNumber || sDetails.name || 'N-A';
           const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
           const adminLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
