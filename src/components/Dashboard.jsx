@@ -41,7 +41,10 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
     }
     return [];
   });
-  const [loadingLogs, setLoadingLogs] = useState(true);
+  const [loadingLogs, setLoadingLogs] = useState(() => {
+    const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+    return !rawLocal;
+  });
 
   const currentHour = new Date().getHours();
   const isOutsidePracticeHours = currentHour < 9 || currentHour >= 23;
@@ -53,65 +56,64 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
       return;
     }
 
-    setLoadingLogs(true);
+    const unsubs = [];
+    const yearsToListen = ['2nd Year', '3rd Year', '4th Year'];
+    const logsMap = new Map();
 
-    // Fetch this student's logs from user_logs (supporting year-wise: user_logs/${year}/${uid} & legacy: user_logs/${uid})
-    const userLogsRef = ref(db, 'user_logs');
-    const unsubscribe = onValue(userLogsRef, (snapshot) => {
-      const data = snapshot.val();
-      let firebaseLogs = [];
-      if (data && typeof data === 'object') {
-        const logsMap = new Map();
-
-        const collectUserLogs = (node) => {
-          if (!node || typeof node !== 'object') return;
-
-          // If current node directly has child matching this student's uid
-          if (node[uid] && typeof node[uid] === 'object') {
-            Object.values(node[uid]).forEach(log => {
-              if (log && typeof log === 'object' && log.id) {
-                logsMap.set(log.id, log);
-              }
-            });
-          }
-
-          // Recurse into sub-nodes (e.g. '2nd Year', '3rd Year', '4th Year' year folders)
-          Object.keys(node).forEach(key => {
-            if (key !== uid && typeof node[key] === 'object') {
-              collectUserLogs(node[key]);
-            }
-          });
-        };
-
-        collectUserLogs(data);
-        firebaseLogs = Array.from(logsMap.values());
+    // Pre-populate with local cache
+    try {
+      const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+      if (rawLocal) {
+        const parsed = JSON.parse(rawLocal);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(l => { if (l && l.id) logsMap.set(l.id, l); });
+        }
       }
+    } catch (e) {}
 
-      firebaseLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-      // Firebase is single source of truth when connected:
-      // Sync localStorage with real Firebase logs (clears deleted logs from local storage)
+    const updateAndSave = () => {
+      const firebaseLogs = Array.from(logsMap.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       try {
         localStorage.setItem('gate_cbt_student_logs', JSON.stringify(firebaseLogs));
       } catch (e) {}
-
       setStudentLogs(firebaseLogs);
       setLoadingLogs(false);
-    }, (error) => {
-      console.warn("Firebase user_logs fetch failed, loading from localStorage fallback:", error);
-      // Fallback: localStorage only when Firebase read fails
-      const rawLocal = localStorage.getItem('gate_cbt_student_logs');
-      let finalLogs = [];
-      if (rawLocal) {
-        try {
-          const localLogs = JSON.parse(rawLocal);
-          finalLogs = localLogs.filter(loc => loc && (loc.uid === uid || !loc.uid));
-          finalLogs.sort((a, b) => new Date(b.date) - new Date(a.date));
-        } catch (e) {}
-      }
-      setStudentLogs(finalLogs);
-      setLoadingLogs(false);
+    };
+
+    // 1. Listen to student's isolated user_logs node across years (only fetching THIS student's logs)
+    yearsToListen.forEach(yr => {
+      const pathRef = ref(db, `user_logs/${yr}/${uid}`);
+      const unsub = onValue(pathRef, (snapshot) => {
+        const val = snapshot.val();
+        if (val && typeof val === 'object') {
+          Object.values(val).forEach(log => {
+            if (log && typeof log === 'object' && log.id) {
+              logsMap.set(log.id, log);
+            }
+          });
+        }
+        updateAndSave();
+      }, (err) => {
+        console.warn(`Targeted fetch for ${yr} failed:`, err);
+        updateAndSave();
+      });
+      unsubs.push(unsub);
     });
+
+    // 2. Also listen to root legacy user_logs/${uid} if any
+    const legacyRef = ref(db, `user_logs/${uid}`);
+    const unsubLegacy = onValue(legacyRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val && typeof val === 'object') {
+        Object.values(val).forEach(log => {
+          if (log && typeof log === 'object' && log.id) {
+            logsMap.set(log.id, log);
+          }
+        });
+      }
+      updateAndSave();
+    });
+    unsubs.push(unsubLegacy);
 
     // Listen for instant local updates when test is submitted on this device
     const handleLogUpdated = (e) => {
@@ -126,10 +128,10 @@ export default function Dashboard({ questionsList, onStartTest, adminConfig, aut
     window.addEventListener('gate_cbt_log_updated', handleLogUpdated);
 
     return () => {
-      unsubscribe();
+      unsubs.forEach(u => typeof u === 'function' && u());
       window.removeEventListener('gate_cbt_log_updated', handleLogUpdated);
     };
-  }, [authUser?.uid]);
+  }, [authUser]);
 
   const topics = [
     { name: 'Full Syllabus', icon: '📝', desc: 'Random questions across all syllabus topics' },

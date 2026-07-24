@@ -320,12 +320,12 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     }
   }, [examConfig.selectedTopic, previewIndex]);
 
-  // Pre-fetch & background-sync admin student_logs and user_logs from Firebase DB (ultra-fast 0ms cache + instant traversal)
+  // Pre-fetch & background-sync admin student_logs from Firebase DB (ultra-fast 82KB lightweight attendance index)
   useEffect(() => {
-    let studentLogsData = null;
-    let userLogsData = null;
+    const studentLogsRef = ref(db, 'student_logs');
 
-    const syncAllLogs = () => {
+    const unsubscribe = onValue(studentLogsRef, (snapshot) => {
+      const data = snapshot.val();
       const map = new Map();
 
       // Include local cache first for 0ms instant load
@@ -343,20 +343,18 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         }
       } catch (e) {}
 
-      // Fast non-recursive check for log object
-      const recurse = (node) => {
-        if (!node || typeof node !== 'object') return;
-        // Check if node is a valid student test log (has student info & score/date, but NOT a question item)
-        if ((node.studentName || node.registerNumber) && (node.score !== undefined || node.testDate || node.date) && !node.question_text && !node.custom_options) {
-          const key = node.id || `${node.registerNumber}_${node.date || node.testDate}`;
-          map.set(key, node);
-          return; // Stop traversing children (avoids iterating reviewDetails array!)
-        }
-        Object.values(node).forEach(child => recurse(child));
-      };
-
-      if (studentLogsData) recurse(studentLogsData);
-      if (userLogsData) recurse(userLogsData);
+      if (data && typeof data === 'object') {
+        const recurse = (node) => {
+          if (!node || typeof node !== 'object') return;
+          if ((node.studentName || node.registerNumber) && (node.score !== undefined || node.testDate || node.date) && !node.question_text) {
+            const key = node.id || `${node.registerNumber}_${node.date || node.testDate}`;
+            map.set(key, node);
+            return;
+          }
+          Object.values(node).forEach(child => recurse(child));
+        };
+        recurse(data);
+      }
 
       const logsList = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       setStudentLogs(logsList);
@@ -364,25 +362,9 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
       try {
         localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logsList));
       } catch (e) {}
-    };
-
-    const studentLogsRef = ref(db, 'student_logs');
-    const userLogsRef = ref(db, 'user_logs');
-
-    const unsubSL = onValue(studentLogsRef, (snapshot) => {
-      studentLogsData = snapshot.val();
-      syncAllLogs();
     });
 
-    const unsubUL = onValue(userLogsRef, (snapshot) => {
-      userLogsData = snapshot.val();
-      syncAllLogs();
-    });
-
-    return () => {
-      unsubSL();
-      unsubUL();
-    };
+    return () => unsubscribe();
   }, []);
 
   const handleSaveConfig = (e) => {

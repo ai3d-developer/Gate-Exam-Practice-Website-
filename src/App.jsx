@@ -458,15 +458,18 @@ export default function App() {
 
           const sanitizedYear = String(year).trim().replace(/[.#$[\]/]/g, '_');
 
-          // PRIMARY: Save under user_logs/${sanitizedYear}/${uid}/${logId} — year-wise per-user isolated path
+          // PRIMARY: Save full log under user_logs/${sanitizedYear}/${uid}/${logId} for student history review
           const userLogRef = ref(db, `user_logs/${sanitizedYear}/${currentUid}/${newLog.id}`);
           set(userLogRef, firebasePayload).catch(err => console.warn("Firebase user_logs set failed:", err));
 
-          // SECONDARY: Save to admin view path for admin dashboard
+          // SECONDARY: Save lightweight log summary (without heavy reviewDetails images) to admin attendance path
+          const lightweightPayload = { ...firebasePayload };
+          delete lightweightPayload.reviewDetails;
+
           const rawRegNo = sDetails.registerNumber || sDetails.name || 'N-A';
           const regNo = String(rawRegNo).replace(/[.#$[\]/]/g, '_');
           const adminLogRef = ref(db, `student_logs/${year}/${dateStr}/${regNo}`);
-          set(adminLogRef, firebasePayload).catch(err => console.warn("Firebase admin log failed:", err));
+          set(adminLogRef, lightweightPayload).catch(err => console.warn("Firebase admin log failed:", err));
         }
       } catch (firebaseErr) {
         console.error("Failed to save student attempt log to Firebase:", firebaseErr);
