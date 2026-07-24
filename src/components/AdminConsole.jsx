@@ -320,47 +320,63 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     }
   }, [examConfig.selectedTopic, previewIndex]);
 
-  // Pre-fetch & background-sync admin student_logs from Firebase DB immediately on mount
+  // Pre-fetch & background-sync admin student_logs and user_logs from Firebase DB
   useEffect(() => {
+    let studentLogsData = null;
+    let userLogsData = null;
+
+    const syncAllLogs = () => {
+      const map = new Map();
+
+      // Include local cache first for 0ms instant load
+      try {
+        const rawLocal = localStorage.getItem('gate_cbt_student_logs');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
+          }
+        }
+      } catch (e) {}
+
+      const recurse = (node) => {
+        if (!node || typeof node !== 'object') return;
+        if (node.studentName || node.topic) {
+          const key = node.id || `${node.registerNumber}_${node.date}`;
+          map.set(key, node);
+          return;
+        }
+        Object.values(node).forEach(child => recurse(child));
+      };
+
+      if (studentLogsData) recurse(studentLogsData);
+      if (userLogsData) recurse(userLogsData);
+
+      const logsList = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setStudentLogs(logsList);
+
+      try {
+        localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logsList));
+      } catch (e) {}
+    };
+
     const studentLogsRef = ref(db, 'student_logs');
-    const unsubscribe = onValue(studentLogsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const map = new Map();
+    const userLogsRef = ref(db, 'user_logs');
 
-        // Include local cache first
-        try {
-          const rawLocal = localStorage.getItem('gate_cbt_student_logs');
-          if (rawLocal) {
-            const parsed = JSON.parse(rawLocal);
-            if (Array.isArray(parsed)) {
-              parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
-            }
-          }
-        } catch (e) {}
-
-        const recurse = (node) => {
-          if (!node || typeof node !== 'object') return;
-          if (node.studentName) {
-            const key = node.id || `${node.registerNumber}_${node.date}`;
-            map.set(key, node);
-            return;
-          }
-          Object.values(node).forEach(child => recurse(child));
-        };
-        recurse(data);
-
-        const logsList = Array.from(map.values()).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        setStudentLogs(logsList);
-
-        // Update local cache so future mounts are 0ms instant
-        try {
-          localStorage.setItem('gate_cbt_student_logs', JSON.stringify(logsList));
-        } catch (e) {}
-      }
+    const unsubSL = onValue(studentLogsRef, (snapshot) => {
+      studentLogsData = snapshot.val();
+      syncAllLogs();
     });
 
-    return () => unsubscribe();
+    const unsubUL = onValue(userLogsRef, (snapshot) => {
+      userLogsData = snapshot.val();
+      syncAllLogs();
+    });
+
+    return () => {
+      unsubSL();
+      unsubUL();
+    };
   }, []);
 
   const handleSaveConfig = (e) => {

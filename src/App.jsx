@@ -24,8 +24,26 @@ export default function App() {
   const [authUser, setAuthUser] = useState(undefined); // undefined = loading, null = not logged in
   const [userRole, setUserRole] = useState(null); // 'ADMIN' | 'STUDENT'
   const [currentScreen, setCurrentScreen] = useState('DASHBOARD');
-  const [questionsList, setQuestionsList] = useState([]);
-  const [answersDb, setAnswersDb] = useState({});
+  const [questionsList, setQuestionsList] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gate_cbt_custom_questions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [answersDb, setAnswersDb] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gate_cbt_custom_answers');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+    return {};
+  });
   const [testConfig, setTestConfig] = useState({
     selectedTopic: 'Full Syllabus',
     numQuestions: 20,
@@ -40,7 +58,16 @@ export default function App() {
     registerNumber: ''
   });
   const [testResult, setTestResult] = useState(null);
-  const [dbLoading, setDbLoading] = useState(true);
+  const [dbLoading, setDbLoading] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gate_cbt_custom_questions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return false;
+      }
+    } catch (e) {}
+    return true;
+  });
   const [dbError, setDbError] = useState(null);
   const [adminConfig, setAdminConfig] = useState(null);
 
@@ -135,13 +162,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- Load exam databases in real-time (with 3-second safety timeout) ---
+  // --- Load exam databases in real-time (non-blocking instant cache + background sync) ---
   useEffect(() => {
+    // Quick safety timer (max 800ms) to ensure dbLoading is cleared
     const safetyTimer = setTimeout(() => {
       setDbLoading(false);
-    }, 3000);
-
-    setDbLoading(true);
+    }, 800);
     let customMap = {};
     let dailyMap = {};
     let qbMap = {};
