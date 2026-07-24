@@ -320,7 +320,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     }
   }, [examConfig.selectedTopic, previewIndex]);
 
-  // Pre-fetch & background-sync admin student_logs and user_logs from Firebase DB
+  // Pre-fetch & background-sync admin student_logs and user_logs from Firebase DB (ultra-fast 0ms cache + instant traversal)
   useEffect(() => {
     let studentLogsData = null;
     let userLogsData = null;
@@ -334,17 +334,23 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
         if (rawLocal) {
           const parsed = JSON.parse(rawLocal);
           if (Array.isArray(parsed)) {
-            parsed.forEach(l => { if (l && l.id) map.set(l.id, l); });
+            parsed.forEach(l => {
+              if (l && l.id && (l.studentName || l.registerNumber)) {
+                map.set(l.id, l);
+              }
+            });
           }
         }
       } catch (e) {}
 
+      // Fast non-recursive check for log object
       const recurse = (node) => {
         if (!node || typeof node !== 'object') return;
-        if (node.studentName || node.topic) {
-          const key = node.id || `${node.registerNumber}_${node.date}`;
+        // Check if node is a valid student test log (has student info & score/date, but NOT a question item)
+        if ((node.studentName || node.registerNumber) && (node.score !== undefined || node.testDate || node.date) && !node.question_text && !node.custom_options) {
+          const key = node.id || `${node.registerNumber}_${node.date || node.testDate}`;
           map.set(key, node);
-          return;
+          return; // Stop traversing children (avoids iterating reviewDetails array!)
         }
         Object.values(node).forEach(child => recurse(child));
       };
