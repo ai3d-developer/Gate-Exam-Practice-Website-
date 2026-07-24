@@ -83,54 +83,6 @@ export default function App() {
   const [dbError, setDbError] = useState(null);
   const [adminConfig, setAdminConfig] = useState(null);
 
-  // Auto-clean custom questions older than yesterday (2-day retention lifecycle)
-  useEffect(() => {
-    const cleanExpiredQuestions = async () => {
-      const yesterdayStr = getYesterdayDateStr();
-      const expiredQuestions = questionsList.filter(q => {
-        if (!q.id || !q.id.startsWith('custom_')) return false;
-        if (q.target_date) {
-          return q.target_date < yesterdayStr;
-        }
-        const tsStr = q.id.split('_')[1];
-        const ts = parseInt(tsStr, 10);
-        if (!isNaN(ts)) {
-          const qDate = getLocalDateStr(new Date(ts));
-          return qDate < yesterdayStr;
-        }
-        return false;
-      });
-
-      if (expiredQuestions.length > 0) {
-        console.log("Automatically purging expired custom questions (older than yesterday):", expiredQuestions.map(q => q.id));
-        try {
-          for (const q of expiredQuestions) {
-            await set(ref(db, `custom_questions/${q.id}`), null);
-            await set(ref(db, `custom_answers/${q.id}`), null);
-          }
-          // Clear locally
-          const savedQ = localStorage.getItem('gate_cbt_custom_questions');
-          if (savedQ) {
-            const allQ = JSON.parse(savedQ).filter(q => !expiredQuestions.some(eq => eq.id === q.id));
-            localStorage.setItem('gate_cbt_custom_questions', JSON.stringify(allQ));
-          }
-          const savedA = localStorage.getItem('gate_cbt_custom_answers');
-          if (savedA) {
-            const allA = JSON.parse(savedA);
-            expiredQuestions.forEach(q => delete allA[q.id]);
-            localStorage.setItem('gate_cbt_custom_answers', JSON.stringify(allA));
-          }
-          setQuestionsList(prev => prev.filter(q => !expiredQuestions.some(eq => eq.id === q.id)));
-        } catch (err) {
-          console.warn("Failed to auto-clean expired questions:", err);
-        }
-      }
-    };
-    if (questionsList.length > 0) {
-      cleanExpiredQuestions();
-    }
-  }, [questionsList]);
-
   // Handle Google redirect result (fallback when popup was blocked)
   useEffect(() => {
     handleRedirectResult().catch(console.error);
