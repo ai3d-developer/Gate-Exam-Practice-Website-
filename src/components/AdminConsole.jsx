@@ -172,7 +172,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
     return q.target_years.some(y => selectedYears.includes(y));
   };
 
-  const customQuestions = questionsList.filter(q => q.id && q.id.startsWith('custom_'));
+  const customQuestions = questionsList.filter(q => q && (q.id || q.uniqueKey));
   const rawAllotted = customQuestions.filter(q => {
     if (targetDate < todayDateStr) {
       // Past exam dates are completed & locked; hide questions from Edit Questions tab as requested
@@ -1443,12 +1443,17 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
                     </button>
                   )}
                 </div>
-                <input
-                  type="date"
+                <select
                   value={bankDateFilter}
                   onChange={e => setBankDateFilter(e.target.value)}
                   style={{ width: '100%', padding: '0.55rem 0.85rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', background: 'white', cursor: 'pointer' }}
-                />
+                >
+                  <option value="">All Dates ({customQuestions.length} Questions)</option>
+                  {Array.from(new Set(customQuestions.map(q => q.target_date).filter(Boolean))).sort().reverse().map(d => {
+                    const dCount = customQuestions.filter(q => q.target_date === d).length;
+                    return <option key={d} value={d}>{d} ({dCount} Qs)</option>;
+                  })}
+                </select>
               </div>
             </div>
 

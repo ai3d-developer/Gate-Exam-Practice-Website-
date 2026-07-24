@@ -144,21 +144,44 @@ export default function App() {
     setDbLoading(true);
     let customMap = {};
     let dailyMap = {};
+    let qbMap = {};
 
     const combineAndSetQuestions = () => {
       const combinedMap = new Map();
+
+      const addQuestion = (q, dateOverride) => {
+        if (!q) return;
+        const targetDate = q.target_date || dateOverride || '';
+        const idKey = q.id || `q_${Date.now()}`;
+        const mapKey = targetDate ? `${idKey}_${targetDate}` : idKey;
+
+        const existing = combinedMap.get(mapKey) || {};
+        combinedMap.set(mapKey, {
+          ...existing,
+          ...q,
+          target_date: targetDate || existing.target_date || ''
+        });
+      };
+
       // 1. Add questions from custom_questions
       Object.values(customMap).forEach(q => {
-        if (q && q.id) combinedMap.set(q.id, q);
+        if (q) addQuestion(q, q.target_date);
       });
-      // 2. Add questions from daily_questions (flattened)
-      Object.values(dailyMap).forEach(dateGroup => {
+
+      // 2. Add questions from daily_questions (grouped by date)
+      Object.entries(dailyMap).forEach(([dateStr, dateGroup]) => {
         if (dateGroup && typeof dateGroup === 'object') {
           Object.values(dateGroup).forEach(q => {
-            if (q && q.id) {
-              const existing = combinedMap.get(q.id) || {};
-              combinedMap.set(q.id, { ...existing, ...q });
-            }
+            if (q) addQuestion(q, dateStr);
+          });
+        }
+      });
+
+      // 3. Add questions from question_bank (grouped by section)
+      Object.entries(qbMap).forEach(([sectionStr, secGroup]) => {
+        if (secGroup && typeof secGroup === 'object') {
+          Object.values(secGroup).forEach(q => {
+            if (q) addQuestion(q, q.target_date);
           });
         }
       });
@@ -178,6 +201,7 @@ export default function App() {
 
     const qRef = ref(db, 'custom_questions');
     const dqRef = ref(db, 'daily_questions');
+    const qbRef = ref(db, 'question_bank');
     const aRef = ref(db, 'custom_answers');
 
     const unsubQ = onValue(qRef, (snapshot) => {
@@ -195,6 +219,14 @@ export default function App() {
       combineAndSetQuestions();
     }, (err) => {
       console.warn("Realtime DB daily_questions subscription failed:", err);
+    });
+
+    const unsubQB = onValue(qbRef, (snapshot) => {
+      const val = snapshot.val();
+      qbMap = (val && typeof val === 'object') ? val : {};
+      combineAndSetQuestions();
+    }, (err) => {
+      console.warn("Realtime DB question_bank subscription failed:", err);
     });
 
     const unsubA = onValue(aRef, (snapshot) => {
@@ -216,6 +248,7 @@ export default function App() {
     return () => {
       unsubQ();
       unsubDQ();
+      unsubQB();
       unsubA();
       clearTimeout(safetyTimer);
     };
