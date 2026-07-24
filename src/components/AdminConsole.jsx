@@ -1474,7 +1474,7 @@ export default function AdminConsole({ questionsList, onLogout, authUser, onClea
             {(() => {
               const filteredBankQuestions = customQuestions.filter(q => {
                 const matchesSubject = bankSubjectFilter === 'All' || q.section === bankSubjectFilter;
-                const matchesDate = !bankDateFilter || q.target_date === bankDateFilter;
+                const matchesDate = !bankDateFilter || (q.target_date && q.target_date.trim() === bankDateFilter.trim());
                 const qStr = bankSearchQuery.toLowerCase().trim();
                 const matchesSearch = !qStr ||
                   (q.question_text && q.question_text.toLowerCase().includes(qStr)) ||

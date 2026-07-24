@@ -189,7 +189,19 @@ export default function App() {
 
       const addQuestion = (q, dateOverride) => {
         if (!q) return;
-        const targetDate = q.target_date || dateOverride || '';
+        let targetDate = q.target_date || dateOverride || '';
+        if (!targetDate && q.id && q.id.startsWith('custom_')) {
+          try {
+            const ts = parseInt(q.id.split('_')[1], 10);
+            if (!isNaN(ts)) {
+              const d = new Date(ts);
+              const offset = d.getTimezoneOffset();
+              const adjusted = new Date(d.getTime() - (offset * 60 * 1000));
+              targetDate = adjusted.toISOString().split('T')[0];
+            }
+          } catch (e) {}
+        }
+
         const idKey = q.id || `q_${Date.now()}`;
         const mapKey = targetDate ? `${idKey}_${targetDate}` : idKey;
 
